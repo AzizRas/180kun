@@ -1,0 +1,11 @@
+{
+  "name": "checkin",
+  "title": "Чек-ин",
+  "version": "1.0.0",
+  "description": "Ежедневная отметка за 40 секунд, недельная норма 4 из 7, щиты серии, четыре сценария пропуска, режим восстановления и фиксация возвратов.",
+  "table_prefix": "checkin_",
+  "requires": ["identity"],
+  "provides": [],
+  "emits": ["checkin.recorded", "week.closed", "user.returned", "user.state_changed", "checkin.event_marked"],
+  "listens": ["gamification.extras"]
+}

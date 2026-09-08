@@ -18,7 +18,9 @@
     qIndex: 0,
     onboarding: null,
     today: null,
-    plan: null
+    plan: null,
+    checkin: null,
+    progress: null
   };
 
   // ---------- вспомогательное ----------
@@ -547,14 +549,38 @@
 
   // ---------- план и кабинет ----------
 
+  function weekStrip(week) {
+    var strip = el('div', { class: 'week', 'aria-label': t('checkin.week') }, []);
+    (week.days || []).forEach(function (d) {
+      var cls = 'wd';
+      if (d.done === 'yes') cls += ' wd-yes';
+      else if (d.done === 'partial') cls += ' wd-half';
+      else if (d.done === 'no') cls += ' wd-no';
+      else if (d.excused) cls += ' wd-ex';
+      else if (d.future) cls += ' wd-future';
+      strip.appendChild(el('i', { class: cls, title: d.date }));
+    });
+    return strip;
+  }
+
   function screenHome() {
-    var today = state.today || {};
+    var c = state.checkin || {};
     var plan = state.plan || {};
     var meta = plan.meta || {};
-    var day = today.day || plan.current_day || 0;
+    var pl = c.plan || state.today || {};
+    var day = pl.day || plan.current_day || 0;
     var pct = Math.max(0, Math.min(100, Math.round(day / 180 * 100)));
+    var quiet = c.state === 'recovery' || c.state === 'dormant';
 
     var blocks = [header()];
+
+    // Состояние, если человек выпадал
+    if (c.state && c.state !== 'active' && c.state_hint) {
+      blocks.push(el('div', { class: 'card card-quiet' }, [
+        el('div', { class: 'eyebrow', text: c.state_title }),
+        el('p', { style: 'margin:0', text: c.state_hint })
+      ]));
+    }
 
     // Полоса сезона
     blocks.push(el('div', { class: 'card' }, [
@@ -563,34 +589,61 @@
         el('div', { class: 'of', text: t('plan.of_180') })
       ]),
       el('div', { class: 'track' }, [el('i', { style: 'width:' + pct + '%' })]),
-      today.chapter_title
-        ? el('p', { class: 'muted', style: 'margin:12px 0 0', text: today.chapter_title + (today.deload ? ' · ' + t('plan.deload') : '') })
+      pl.chapter_title
+        ? el('p', { class: 'muted', style: 'margin:12px 0 0', text: pl.chapter_title + (pl.deload ? ' · ' + t('plan.deload') : '') })
         : null
     ]));
 
-    // Действие на сегодня
-    if (today.action) {
-      var a = today.action;
-      var title = a.target ? a.title.split('{target}').join(String(a.target)) : a.title;
-      blocks.push(el('div', { class: 'card card-accent' }, [
+    // Действие на сегодня и кнопка отметки
+    if (pl.action) {
+      var a = pl.action;
+      var title = a.target ? String(a.title).split('{target}').join(String(a.target)) : a.title;
+      var card = el('div', { class: 'card card-accent' }, [
         el('div', { class: 'eyebrow', text: t('plan.today') }),
         el('h2', { text: title }),
         el('p', { class: 'muted', text: a.hint || '' })
-      ]));
-    } else if (today.finished) {
+      ]);
+      blocks.push(card);
+
+      blocks.push(c.recorded
+        ? el('div', { class: 'stack' }, [
+            note('ok', t('checkin.done_today')),
+            el('button', { class: 'btn btn-ghost', text: t('checkin.change'), onclick: function () { go(screenCheckin); } })
+          ])
+        : actionButton(t('checkin.save'), 'btn-primary', function () { go(screenCheckin); }));
+    } else if (pl.finished) {
       blocks.push(el('div', { class: 'card' }, [el('h2', { text: t('plan.finished') })]));
     }
 
-    // Норма недели
-    if (today.norm) {
+    // Неделя
+    if (c.week) {
+      var left = Math.max(0, c.week.norm_days - c.week.done_days);
       blocks.push(el('div', { class: 'card' }, [
-        el('div', { class: 'eyebrow', text: t('plan.week', { n: today.week || 1 }) }),
+        el('div', { class: 'eyebrow', text: t('checkin.week') }),
+        weekStrip(c.week),
         el('div', { class: 'rows' }, [
-          row(t('plan.norm', { days: today.norm.days }), today.norm.days + '/7'),
-          row(t('ui.steps'), String(today.norm.steps)),
-          today.norm.minutes ? row(t('ui.minutes'), String(today.norm.minutes)) : null,
-          today.norm.strength ? row(t('ui.strength'), String(today.norm.strength)) : null
-        ].filter(Boolean))
+          row(t('checkin.week_progress', { done: c.week.done_days, norm: c.week.norm_days }),
+              c.week.kept ? t('checkin.week_kept') : t('checkin.week_left', { n: left })),
+          c.week.excused ? row(t('checkin.excused', { n: c.week.excused }), String(c.week.excused)) : null,
+          row(t('checkin.streak'), String(c.streak || 0)),
+          row(t('checkin.shields'), String(c.shields != null ? c.shields : 0))
+        ].filter(Boolean)),
+        el('button', {
+          class: 'btn btn-quiet', style: 'margin-top:6px',
+          text: t('checkin.mark_event'), onclick: function () { go(screenEvent); }
+        })
+      ]));
+    }
+
+    // Очки — скрыты в режиме восстановления: соревнование сейчас не помогает
+    if (state.progress && !quiet) {
+      blocks.push(el('div', { class: 'card' }, [
+        el('div', { class: 'eyebrow', text: t('gami.level') }),
+        el('div', { class: 'daybar' }, [
+          el('div', { class: 'n', text: String(state.progress.level) }),
+          el('div', { class: 'of', text: state.progress.xp + ' ' + t('gami.xp') })
+        ]),
+        el('p', { class: 'muted', style: 'margin:10px 0 0', text: t('gami.to_next', { n: state.progress.xp_to_next }) })
       ]));
     }
 
@@ -611,14 +664,172 @@
       }));
     }
 
-    if (state.user && state.user.needs_phone) {
-      blocks.push(note('info', t('ui.attach_phone')));
-    }
+    if (state.user && state.user.needs_phone) blocks.push(note('info', t('ui.attach_phone')));
 
     blocks.push(el('div', { class: 'spacer' }));
     blocks.push(el('button', { class: 'btn btn-quiet', text: t('ui.logout'), onclick: logout }));
 
     return el('div', { class: 'stack' }, blocks);
+  }
+
+  /** Чек-ин: три нажатия и кнопка. Всё, что можно не спрашивать, не спрашиваем. */
+  function screenCheckin() {
+    var c = state.checkin || {};
+    var entry = c.entry || {};
+    var picked = {
+      done: entry.done || null,
+      energy: entry.energy || null,
+      mood: entry.mood || null,
+      skip_reason: entry.skip_reason || null
+    };
+
+    var msg = el('div', {});
+    var submit = actionButton(t('checkin.save'), 'btn-primary');
+    var reasonBox = el('div', { class: 'stack' }, []);
+    reasonBox.hidden = picked.done !== 'no';
+
+    function refreshSubmit() {
+      submit.disabled = !picked.done
+        || !picked.energy || !picked.mood
+        || (picked.done === 'no' && !picked.skip_reason);
+    }
+
+    // Как прошёл день
+    var doneBox = el('div', { class: 'opts opts-3' }, []);
+    ['yes', 'partial', 'no'].forEach(function (v) {
+      var b = choice(t('checkin.done.' + v), picked.done === v, function () {
+        picked.done = v;
+        Array.prototype.forEach.call(doneBox.children, function (x) { x.classList.remove('opt-on'); });
+        b.classList.add('opt-on');
+        reasonBox.hidden = v !== 'no';
+        refreshSubmit();
+      });
+      doneBox.appendChild(b);
+    });
+
+    // Причина — только если не вышло
+    var reasons = el('div', { class: 'opts' }, []);
+    ['no_time', 'tired', 'sick', 'event', 'forgot', 'didnt_want'].forEach(function (v) {
+      var b = choice(t('checkin.reason.' + v), picked.skip_reason === v, function () {
+        picked.skip_reason = v;
+        Array.prototype.forEach.call(reasons.children, function (x) { x.classList.remove('opt-on'); });
+        b.classList.add('opt-on');
+        refreshSubmit();
+      });
+      reasons.appendChild(b);
+    });
+    reasonBox.appendChild(el('div', { class: 'eyebrow', text: t('checkin.why') }));
+    reasonBox.appendChild(reasons);
+
+    function scale(label, key) {
+      var box = el('div', { class: 'opts opts-5' }, []);
+      [1, 2, 3, 4, 5].forEach(function (n) {
+        var b = choice(String(n), picked[key] === n, function () {
+          picked[key] = n;
+          Array.prototype.forEach.call(box.children, function (x) { x.classList.remove('opt-on'); });
+          b.classList.add('opt-on');
+          refreshSubmit();
+        });
+        box.appendChild(b);
+      });
+      return el('div', { class: 'stack' }, [el('div', { class: 'eyebrow', text: label }), box]);
+    }
+
+    refreshSubmit();
+
+    var form = el('form', {
+      class: 'stack',
+      onsubmit: function (e) {
+        e.preventDefault();
+        busy(submit, true);
+        api('POST', '/api/checkin', picked).then(function (r) {
+          busy(submit, false);
+          if (r.ok) {
+            if (r.returned) {
+              render(el('div', { class: 'stack' }, [
+                header(),
+                el('div', { class: 'card card-accent center' }, [
+                  el('div', { class: 'tier', text: '+' + 100 }),
+                  el('h2', { text: t('checkin.welcome_back') }),
+                  el('p', { class: 'muted', text: t('gami.comeback_note') })
+                ]),
+                el('div', { class: 'spacer' }),
+                actionButton(t('ui.next'), 'btn-primary', function () { loadHome(); })
+              ]));
+              return;
+            }
+            return loadHome();
+          }
+          msg.textContent = '';
+          msg.appendChild(note('error', r.message || t('ui.network_error')));
+        });
+      }
+    }, [
+      el('div', { class: 'eyebrow', text: t('checkin.title') }),
+      doneBox,
+      reasonBox,
+      scale(t('checkin.energy'), 'energy'),
+      scale(t('checkin.mood'), 'mood'),
+      msg,
+      submit
+    ]);
+
+    var actionTitle = c.plan && c.plan.action ? c.plan.action.title : '';
+    return el('div', { class: 'stack' }, [
+      header(),
+      actionTitle ? el('h2', { text: actionTitle }) : null,
+      form,
+      el('div', { class: 'spacer' }),
+      el('button', { class: 'btn btn-quiet', text: t('ui.back'), onclick: function () { go(screenHome); } })
+    ].filter(Boolean));
+  }
+
+  /** Отметка события: тўй, болезнь, поездка, пост, отпуск. */
+  function screenEvent() {
+    var picked = { type: null };
+    var msg = el('div', {});
+    var submit = actionButton(t('ui.save'), 'btn-primary');
+    submit.disabled = true;
+
+    var box = el('div', { class: 'opts' }, []);
+    ['toy', 'illness', 'trip', 'fasting', 'vacation'].forEach(function (v) {
+      var b = choice(t('checkin.event.' + v), false, function () {
+        picked.type = v;
+        Array.prototype.forEach.call(box.children, function (x) { x.classList.remove('opt-on'); });
+        b.classList.add('opt-on');
+        submit.disabled = false;
+      });
+      box.appendChild(b);
+    });
+
+    var today = new Date().toISOString().slice(0, 10);
+    var from = field(t('checkin.event_from'), { type: 'date', value: today });
+    var to = field(t('checkin.event_to'), { type: 'date', value: today });
+
+    var form = el('form', {
+      class: 'stack',
+      onsubmit: function (e) {
+        e.preventDefault();
+        busy(submit, true);
+        api('POST', '/api/checkin/event', {
+          type: picked.type, date_from: from.input.value, date_to: to.input.value
+        }).then(function (r) {
+          busy(submit, false);
+          if (r.ok) return loadHome();
+          msg.textContent = '';
+          msg.appendChild(note('error', r.message || t('ui.network_error')));
+        });
+      }
+    }, [box, from.wrap, to.wrap, msg, submit]);
+
+    return el('div', { class: 'stack' }, [
+      header(),
+      el('h2', { text: t('checkin.mark_event') }),
+      el('p', { class: 'muted', text: t('checkin.event_intro') }),
+      form,
+      el('div', { class: 'spacer' }),
+      el('button', { class: 'btn btn-quiet', text: t('ui.back'), onclick: function () { go(screenHome); } })
+    ]);
   }
 
   function screenChapters() {
@@ -705,9 +916,17 @@
       }
       if (step === 'zero_cycle') return go(screenZeroCycle);
 
-      return Promise.all([api('GET', '/api/plan/today'), api('GET', '/api/plan')]).then(function (p) {
-        state.today = p[0].today || null;
-        state.plan = (p[1] && p[1].plan) || null;
+      return Promise.all([
+        api('GET', '/api/checkin/today'),
+        api('GET', '/api/plan'),
+        api('GET', '/api/me/progress')
+      ]).then(function (p) {
+        // Чек-ин отдаёт и действие дня, и неделю — отдельный запрос
+        // за планом на сегодня не нужен.
+        state.checkin  = p[0] && p[0].ok ? p[0] : null;
+        state.today    = state.checkin ? state.checkin.plan : null;
+        state.plan     = (p[1] && p[1].plan) || null;
+        state.progress = (p[2] && p[2].progress) || null;
         go(screenHome);
       });
     });

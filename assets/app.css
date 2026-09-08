@@ -210,6 +210,26 @@ button.btn[disabled]{opacity:.45;cursor:default}
   color:var(--ink-3);margin-bottom:6px;
 }
 
+/* --- сетки вариантов --- */
+.opts-3{flex-direction:row}
+.opts-3 .opt{flex:1;text-align:center;padding:12px 8px;font-size:14px}
+.opts-5{flex-direction:row;gap:8px}
+.opts-5 .opt{flex:1;text-align:center;padding:14px 0;font-size:17px;font-weight:700}
+
+/* --- полоса недели --- */
+.week{display:flex;gap:6px;margin:2px 0 14px}
+.week .wd{
+  flex:1;height:8px;border-radius:99px;background:var(--bg-3);
+  border:1px solid transparent;
+}
+.week .wd-yes{background:var(--accent)}
+.week .wd-half{background:color-mix(in srgb,var(--accent) 45%,var(--bg-3))}
+.week .wd-no{background:var(--bg-3);border-color:var(--alert)}
+.week .wd-ex{background:var(--saffron)}
+.week .wd-future{background:var(--bg-3);opacity:.45}
+
+.card-quiet{background:var(--bg-3);border-color:var(--line)}
+
 .spacer{flex:1;min-height:20px}
 
 .hint{font-size:13px;color:var(--ink-3);text-align:center;line-height:1.5}

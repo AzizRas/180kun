@@ -1,0 +1,11 @@
+{
+  "name": "gamification",
+  "title": "Очки",
+  "version": "1.0.0",
+  "description": "XP за регулярность и возвращение, уровни, защита от накрутки. Реализует контракт Gamification.",
+  "table_prefix": "gami_",
+  "requires": ["identity"],
+  "provides": ["App\\Contracts\\Gamification"],
+  "emits": ["xp.awarded", "level.up"],
+  "listens": ["checkin.recorded", "user.returned", "week.closed", "onboarding.completed"]
+}
