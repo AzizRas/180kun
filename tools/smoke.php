@@ -314,6 +314,158 @@ check('выбор действия детерминирован', $sameDay['key'
 $limited = Library::actionFor(65, $calc['weeks'][10], $calc['meta'], true);
 check('при ограничениях не даём ударную нагрузку', !in_array($limited['key'], ['strength_session', 'cardio_session'], true));
 
+echo "\nЕжедневный чек-ин\n";
+class_alias(Modules\Checkin\Domain\Recovery::class, 'Recovery');
+class_alias(Modules\Gamification\Domain\Ledger::class, 'Ledger');
+
+$today = gmdate('Y-m-d');
+$ago = static fn(int $d): string => gmdate('Y-m-d', time() - $d * 86400);
+
+$c1 = call($kernel, 'GET', '/api/checkin/today', [], $H);
+check('экран чек-ина отдаёт действие из плана', !empty($c1['json']['plan']['action']['title']));
+check('день ещё не отмечен', ($c1['json']['recorded'] ?? true) === false);
+check('норма недели пришла', ($c1['json']['week']['norm_days'] ?? 0) === 4);
+check('щитов в месяце — два', ($c1['json']['shields'] ?? 0) === 2);
+
+$rec = call($kernel, 'POST', '/api/checkin', ['done' => 'yes', 'energy' => 4, 'mood' => 4], $H);
+check('чек-ин записан', $rec['status'] === 200 && ($rec['json']['week']['done_days'] ?? 0) === 1);
+
+$again = call($kernel, 'POST', '/api/checkin', ['done' => 'partial', 'energy' => 3, 'mood' => 3], $H);
+check('повторная отметка правит день, а не дублирует', ($again['json']['week']['checkins'] ?? 0) === 1);
+
+$noReason = call($kernel, 'POST', '/api/checkin', ['done' => 'no'], $H);
+check('без причины «не вышло» не принимается', ($noReason['json']['error'] ?? '') === 'reason_required');
+
+$future = call($kernel, 'POST', '/api/checkin', ['done' => 'yes', 'date' => gmdate('Y-m-d', time() + 86400)], $H);
+check('будущий день отклонён', ($future['json']['error'] ?? '') === 'in_future');
+
+$old = call($kernel, 'POST', '/api/checkin', ['done' => 'yes', 'date' => $ago(5)], $H);
+check('задним числом дальше вчера нельзя', ($old['json']['error'] ?? '') === 'too_old');
+
+echo "\nОчки (решение Р-15)\n";
+$prog = call($kernel, 'GET', '/api/me/progress', [], $H);
+$xp1 = (int) ($prog['json']['progress']['xp'] ?? 0);
+check('очки начислены за чек-ин и действие', $xp1 >= 10 + Ledger::RATES['action_half'], 'xp=' . $xp1);
+check('щиты пришли из модуля Checkin через событие', ($prog['json']['progress']['shields'] ?? 0) === 2);
+
+$before = $xp1;
+call($kernel, 'POST', '/api/checkin', ['done' => 'yes', 'energy' => 5, 'mood' => 5], $H);
+$prog2 = call($kernel, 'GET', '/api/me/progress', [], $H);
+check('повторный чек-ин того же дня очков не добавляет',
+    (int) ($prog2['json']['progress']['xp'] ?? 0) === $before, 'было ' . $before . ', стало ' . ($prog2['json']['progress']['xp'] ?? '?'));
+
+check('уровень считается от очков', Ledger::levelFor(0) === 1 && Ledger::levelFor(40) === 2 && Ledger::levelFor(100000) === 180);
+check('возврат стоит дороже недельной нормы', Ledger::RATES['comeback'] > Ledger::RATES['week_kept']);
+check('честный чек-ин оплачивается всегда', Ledger::RATES['checkin'] > 0);
+
+echo "\nЧетыре состояния пропуска (§ 06)\n";
+check('0-1 день — в графике', Recovery::stateForGap(0) === 'active' && Recovery::stateForGap(1) === 'active');
+check('2-4 дня — пауза', Recovery::stateForGap(2) === 'attention' && Recovery::stateForGap(4) === 'attention');
+check('5-10 дней — восстановление', Recovery::stateForGap(5) === 'recovery' && Recovery::stateForGap(10) === 'recovery');
+check('больше 10 — сезон на паузе', Recovery::stateForGap(11) === 'dormant');
+
+echo "\nВозврат после срыва — главная метрика\n";
+// Отдельный пользователь: историю пишем прямо в базу, чтобы смоделировать разрыв.
+$u2 = call($kernel, 'POST', '/api/auth/register', ['phone' => '944443322', 'password' => 'parol12345', 'name' => 'Test2'])['json'];
+$H2 = ['x-session-token' => $u2['token']];
+$uid2 = (int) $u2['user']['id'];
+
+$kernel->db()->insert('checkin_days', [
+    'user_id' => $uid2, 'date' => $ago(6), 'done' => 'yes', 'created_at' => gmdate('c'),
+]);
+$back = call($kernel, 'POST', '/api/checkin', ['done' => 'yes', 'energy' => 3, 'mood' => 3], $H2);
+check('возврат после 6 дней зафиксирован', ($back['json']['returned'] ?? false) === true && ($back['json']['gap_days'] ?? 0) === 6);
+
+$prog3 = call($kernel, 'GET', '/api/me/progress', [], $H2);
+check('за возврат начислено 100', (int) ($prog3['json']['progress']['xp'] ?? 0) >= Ledger::RATES['comeback']);
+
+$rate = $kernel->db()->first('SELECT gap_days FROM checkin_returns WHERE user_id = ?', [$uid2]);
+check('возврат попал в источник Return Rate', (int) ($rate['gap_days'] ?? 0) === 6);
+
+// Полное имя, а не алиас: у алиаса ::class возвращает короткое имя,
+// и контейнер такого сервиса не найдёт.
+$recoverySvc = $kernel->container->get(Modules\Checkin\Domain\Recovery::class);
+check('один разрыв — одна запись возврата', $recoverySvc->registerReturn($uid2, $today) === 0);
+
+$u5 = call($kernel, 'POST', '/api/auth/register', ['phone' => '911110099', 'password' => 'parol12345'])['json'];
+$uid5 = (int) $u5['user']['id'];
+$kernel->db()->insert('checkin_days', [
+    'user_id' => $uid5, 'date' => $ago(2), 'done' => 'yes', 'created_at' => gmdate('c'),
+]);
+check('перерыв в 2 дня возвратом не считается', $recoverySvc->registerReturn($uid5, $today) === 0);
+
+echo "\nНедельная норма и щиты\n";
+$u3 = call($kernel, 'POST', '/api/auth/register', ['phone' => '933332211', 'password' => 'parol12345'])['json'];
+$uid3 = (int) $u3['user']['id'];
+$week = $kernel->container->get(Modules\Checkin\Domain\Week::class);
+$streak = $kernel->container->get(Modules\Checkin\Domain\Streak::class);
+
+// Прошлая неделя: три выполненных дня из нормы 4 — не хватает ровно одного.
+$prevWeek = $week->startFor($uid3, $ago(9));
+foreach ([0, 1, 2] as $i) {
+    $kernel->db()->insert('checkin_days', [
+        'user_id' => $uid3,
+        'date'    => gmdate('Y-m-d', strtotime($prevWeek) + $i * 86400),
+        'done'    => 'yes',
+        'created_at' => gmdate('c'),
+    ]);
+}
+$openWeek = $streak->recompute($uid3, $prevWeek);
+check('пока неделя открыта, норма не выполнена', $openWeek['kept'] === false);
+check('щит не тратится на открытой неделе', $streak->shieldsLeft($uid3, $prevWeek) === 2);
+
+$closed = $streak->recompute($uid3, $prevWeek, true);
+check('при закрытии щит спасает неделю', $closed['kept'] === true && $closed['shield_used'] === true);
+// Щит принадлежит месяцу спасаемой недели, а не сегодняшнему дню —
+// поэтому и проверяем месяц той недели.
+check('щит списан', $streak->shieldsLeft($uid3, $prevWeek) === 1);
+
+$reclosed = $streak->recompute($uid3, $prevWeek, true);
+check('повторное закрытие второй щит не тратит', $streak->shieldsLeft($uid3, $prevWeek) === 1);
+check('повторный пересчёт не снимает зачёт недели', $reclosed['kept'] === true);
+check('серия — одна неделя', $streak->current($uid3) === 1);
+
+$u4 = call($kernel, 'POST', '/api/auth/register', ['phone' => '922221100', 'password' => 'parol12345'])['json'];
+$uid4 = (int) $u4['user']['id'];
+$prevWeek4 = $week->startFor($uid4, $ago(9));
+$kernel->db()->insert('checkin_days', [
+    'user_id' => $uid4, 'date' => $prevWeek4, 'done' => 'yes', 'created_at' => gmdate('c'),
+]);
+$far = $streak->recompute($uid4, $prevWeek4, true);
+check('щит не спасает неделю, где не хватило двух дней', $far['kept'] === false && $streak->shieldsLeft($uid4) === 2);
+
+echo "\nСобытия-помехи (тўй, болезнь, поездка)\n";
+$ev = call($kernel, 'POST', '/api/checkin/event', [
+    'type' => 'toy', 'date_from' => $today, 'date_to' => gmdate('Y-m-d', time() + 86400),
+], $H2);
+check('событие отмечено', $ev['status'] === 200 && ($ev['json']['type'] ?? '') === 'toy');
+
+$afterEvent = call($kernel, 'GET', '/api/checkin/today', [], $H2);
+check('норма недели снижена событием', ($afterEvent['json']['week']['norm_days'] ?? 4) < 4, 'норма ' . ($afterEvent['json']['week']['norm_days'] ?? '?'));
+check('дни события помечены в неделе',
+    count(array_filter($afterEvent['json']['week']['days'] ?? [], static fn($d) => !empty($d['excused']))) >= 1);
+
+$badEvent = call($kernel, 'POST', '/api/checkin/event', ['type' => 'holiday', 'date_from' => $today], $H2);
+check('неизвестный тип события отклонён', ($badEvent['json']['error'] ?? '') === 'bad_event_type');
+
+$longEvent = call($kernel, 'POST', '/api/checkin/event', [
+    'type' => 'trip', 'date_from' => $today, 'date_to' => gmdate('Y-m-d', time() + 30 * 86400),
+], $H2);
+check('слишком длинное событие отклонено', ($longEvent['json']['error'] ?? '') === 'event_too_long');
+
+check('норма не падает ниже двух дней', Modules\Checkin\Domain\Week::MIN_NORM_DAYS === 2);
+
+echo "\nМетрика Return Rate доступна только администратору\n";
+$rr = call($kernel, 'GET', '/api/metrics/return-rate', [], $H2);
+check('обычному пользователю метрика закрыта', $rr['status'] === 403);
+
+// Администратором стал первый зарегистрированный аккаунт; его пароль
+// был изменён тестом сброса, поэтому входим заново.
+$adminLogin = call($kernel, 'POST', '/api/auth/login', ['phone' => '901234567', 'password' => 'newparol123']);
+$rrAdmin = call($kernel, 'GET', '/api/metrics/return-rate', [], ['x-session-token' => (string) ($adminLogin['json']['token'] ?? '')]);
+check('администратор метрику видит', $rrAdmin['status'] === 200 && isset($rrAdmin['json']['rate']),
+    'статус ' . $rrAdmin['status']);
+
 echo "\nПереводы\n";
 check('русские строки загружены', $kernel->i18n->t('identity.phone_taken') !== 'identity.phone_taken');
 check('узбекские строки загружены', $kernel->i18n->t('identity.phone_taken', [], 'uz') !== 'identity.phone_taken');
@@ -364,6 +516,60 @@ if (is_array($off)) {
     check('защищённый маршрут отвечает 401, а не 500', ($off['guarded_status'] ?? 0) === 401, 'получено ' . ($off['guarded_status'] ?? '?'));
     check('Coach работает на шаблонах', ($off['coach_reply'] ?? '') === 'template');
     check('health продолжает отвечать отчётом', !empty($off['health_parsable']) && in_array($off['health_status'] ?? 0, [200, 503], true));
+}
+
+echo "\nЧек-ин живёт без плана и без очков\n";
+// Второй сценарий отключения: оставляем ядро продукта, но убираем
+// планирование и геймификацию. Это проверяет, что ежедневный цикл
+// не зависит от того, что на него навешано.
+copy($root . '/modules.php', $backup);
+file_put_contents(
+    $root . '/modules.php',
+    "<?php\nreturn ['health','identity','web','checkin'];\n"
+);
+
+$code2 = <<<'PHP'
+$k = require dirname(__DIR__) . '/app/bootstrap.php';
+$k->config->set('db.path', dirname(__DIR__) . '/storage/db/nodeps.sqlite');
+foreach (['', '-wal', '-shm'] as $s) { @unlink($k->config->get('db.path') . $s); }
+(new App\Migrator($k))->migrate();
+
+$reg = $k->handle(App\Request::make('POST', '/api/auth/register',
+    ['phone' => '900001122', 'password' => 'parol12345']))->decoded();
+$h = ['x-session-token' => (string) ($reg['token'] ?? '')];
+
+$today = $k->handle(App\Request::make('GET', '/api/checkin/today', [], [], $h));
+$rec   = $k->handle(App\Request::make('POST', '/api/checkin',
+    ['done' => 'yes', 'energy' => 4, 'mood' => 4], [], $h));
+$prog  = $k->handle(App\Request::make('GET', '/api/me/progress', [], [], $h));
+
+echo json_encode([
+    'planner'     => $k->container->get(App\Contracts\Planner::class)::class,
+    'gami'        => $k->container->get(App\Contracts\Gamification::class)::class,
+    'today_status'=> $today->status,
+    'plan_null'   => $today->decoded()['plan'] === null,
+    'norm_days'   => $today->decoded()['week']['norm_days'] ?? null,
+    'rec_status'  => $rec->status,
+    'done_days'   => $rec->decoded()['week']['done_days'] ?? null,
+    'progress'    => $prog->status,
+], JSON_UNESCAPED_UNICODE);
+PHP;
+file_put_contents($root . '/tools/_off2.php', "<?php\n" . $code2 . "\n");
+$out2 = shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($root . '/tools/_off2.php') . ' 2>&1');
+@unlink($root . '/tools/_off2.php');
+@unlink($root . '/storage/db/nodeps.sqlite');
+copy($backup, $root . '/modules.php');
+@unlink($backup);
+
+$off2 = json_decode((string) $out2, true);
+check('приложение поднимается без planning и gamification', is_array($off2), trim((string) $out2));
+if (is_array($off2)) {
+    check('Planner падает на заглушку', ($off2['planner'] ?? '') === 'App\Contracts\NullPlanner');
+    check('Gamification падает на заглушку', ($off2['gami'] ?? '') === 'App\Contracts\NullGamification');
+    check('экран чек-ина работает без плана', ($off2['today_status'] ?? 0) === 200 && !empty($off2['plan_null']));
+    check('норма недели берётся по умолчанию', ($off2['norm_days'] ?? 0) === 4);
+    check('чек-ин записывается без плана и очков', ($off2['rec_status'] ?? 0) === 200 && ($off2['done_days'] ?? 0) === 1);
+    check('маршрут очков исчез вместе с модулем', ($off2['progress'] ?? 0) === 404);
 }
 
 echo "\n" . str_repeat('-', 46) . "\n";
