@@ -1,0 +1,11 @@
+{
+  "name": "onboarding",
+  "title": "Онбординг",
+  "version": "1.0.0",
+  "description": "Восемь вопросов, анкета противопоказаний PAR-Q, отказ в допуске по правилам безопасности, сбор baseline и определение ступени T0–T3.",
+  "table_prefix": "onboarding_",
+  "requires": ["identity"],
+  "provides": [],
+  "emits": ["onboarding.completed", "onboarding.rejected", "baseline.captured"],
+  "listens": ["planning.load_limits"]
+}

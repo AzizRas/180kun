@@ -1,0 +1,11 @@
+{
+  "name": "web",
+  "title": "Веб-интерфейс",
+  "version": "1.0.0",
+  "description": "Оболочка приложения: экраны входа и кабинета, переключатель языка, PWA. Работает и как Telegram Mini App, и как обычный сайт.",
+  "table_prefix": "web_",
+  "requires": ["identity"],
+  "provides": [],
+  "emits": [],
+  "listens": []
+}

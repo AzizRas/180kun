@@ -1,0 +1,11 @@
+{
+  "name": "telegram",
+  "title": "Telegram",
+  "version": "1.0.0",
+  "description": "Вход через Telegram Mini App по подписи initData, привязка аккаунта, доставка сообщений и кодов через бота.",
+  "table_prefix": "telegram_",
+  "requires": ["identity"],
+  "provides": [],
+  "emits": [],
+  "listens": ["notify.send", "notify.code", "notify.channels"]
+}

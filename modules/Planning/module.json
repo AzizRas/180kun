@@ -1,0 +1,11 @@
+{
+  "name": "planning",
+  "title": "План",
+  "version": "1.0.0",
+  "description": "Детерминированный план на 180 дней: шесть глав, недельные нормы, прогрессия нагрузки и безопасный темп. Реализует контракт Planner.",
+  "table_prefix": "planning_",
+  "requires": ["identity"],
+  "provides": ["App\\Contracts\\Planner"],
+  "emits": ["plan.built", "planning.load_limits"],
+  "listens": ["onboarding.completed"]
+}

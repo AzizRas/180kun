@@ -1,0 +1,11 @@
+{
+  "name": "sms",
+  "title": "SMS",
+  "version": "1.0.0",
+  "description": "Доставка кодов подтверждения по SMS. Адаптер Eskiz, запасной режим — запись кода в лог при отладке.",
+  "table_prefix": "sms_",
+  "requires": [],
+  "provides": [],
+  "emits": [],
+  "listens": ["notify.code", "notify.channels"]
+}

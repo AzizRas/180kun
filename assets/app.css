@@ -1,0 +1,222 @@
+/* LEVEL 180 — интерфейс.
+   Системные шрифты вместо загружаемых: на мобильном интернете в Ташкенте
+   каждый лишний запрос за шрифтом — это полсекунды белого экрана. */
+
+:root{
+  --bg:#0B0F14;
+  --bg-2:#121924;
+  --bg-3:#1A2431;
+  --line:#233040;
+  --ink:#EDF3FA;
+  --ink-2:#9FB1C6;
+  --ink-3:#64788F;
+
+  --accent:#2E9BFF;          /* электрический синий — основное действие */
+  --accent-ink:#04121F;
+  --accent-soft:#0F2C46;
+  --saffron:#FFB627;         /* акцент внимания */
+  --jade:#2ED197;
+  --alert:#FF6B57;
+
+  --r:14px;
+  --pad:20px;
+  --tap:52px;                /* минимальная высота нажимаемого элемента */
+  --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+
+html,body{height:100%}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--ink);
+  font-family:var(--font);
+  font-size:16px;
+  line-height:1.5;
+  -webkit-font-smoothing:antialiased;
+  overscroll-behavior-y:none;
+}
+
+.screen-host{
+  min-height:100%;
+  display:flex;
+  flex-direction:column;
+  max-width:520px;
+  margin:0 auto;
+  padding:
+    calc(env(safe-area-inset-top) + 24px)
+    var(--pad)
+    calc(env(safe-area-inset-bottom) + 28px);
+}
+
+/* --- загрузочный экран --- */
+.boot{margin:auto;text-align:center}
+.boot-mark{
+  font-size:56px;font-weight:800;letter-spacing:-.04em;
+  color:var(--accent);
+  animation:pulse 1.4s ease-in-out infinite;
+}
+.boot-text{color:var(--ink-3);font-size:14px;margin:8px 0 0}
+@keyframes pulse{0%,100%{opacity:.35}50%{opacity:1}}
+
+/* --- типографика --- */
+h1{font-size:30px;line-height:1.1;letter-spacing:-.03em;font-weight:800;margin:0 0 10px;text-wrap:balance}
+h2{font-size:20px;line-height:1.25;letter-spacing:-.02em;font-weight:700;margin:0 0 6px}
+p{margin:0 0 14px;color:var(--ink-2)}
+.lead{font-size:17px;color:var(--ink-2)}
+.muted{color:var(--ink-3);font-size:14px}
+.center{text-align:center}
+
+.mark{
+  display:inline-flex;align-items:baseline;gap:7px;
+  font-weight:800;letter-spacing:-.03em;font-size:19px;
+}
+.mark b{color:var(--accent);font-size:23px}
+
+/* --- шапка экрана --- */
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:28px}
+
+/* --- переключатель языка --- */
+.lang{display:inline-flex;background:var(--bg-2);border:1px solid var(--line);border-radius:99px;padding:3px}
+.lang button{
+  border:0;background:transparent;color:var(--ink-3);
+  font:600 13px/1 var(--font);padding:7px 13px;border-radius:99px;cursor:pointer;
+}
+.lang button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+
+/* --- формы --- */
+.stack{display:flex;flex-direction:column;gap:12px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field label{font-size:13px;font-weight:600;color:var(--ink-2);letter-spacing:.01em}
+
+input{
+  width:100%;min-height:var(--tap);
+  background:var(--bg-2);
+  border:1px solid var(--line);
+  border-radius:var(--r);
+  color:var(--ink);
+  font:500 16px/1.2 var(--font);      /* 16px не даёт iOS зумить при фокусе */
+  padding:0 15px;
+  transition:border-color .15s,background .15s;
+}
+input::placeholder{color:var(--ink-3)}
+input:focus{outline:none;border-color:var(--accent);background:var(--bg-3)}
+input[aria-invalid="true"]{border-color:var(--alert)}
+
+input.code{
+  text-align:center;letter-spacing:.5em;font-size:26px;font-weight:700;
+  padding-left:.5em;                   /* компенсация трекинга справа */
+}
+
+/* --- кнопки --- */
+button.btn{
+  width:100%;min-height:var(--tap);
+  border:0;border-radius:var(--r);
+  font:700 16px/1 var(--font);
+  cursor:pointer;
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  transition:transform .08s,opacity .15s;
+}
+button.btn:active{transform:scale(.985)}
+button.btn[disabled]{opacity:.45;cursor:default}
+
+.btn-primary{background:var(--accent);color:var(--accent-ink)}
+.btn-tg{background:#229ED9;color:#fff}
+.btn-ghost{background:var(--bg-2);color:var(--ink);border:1px solid var(--line)}
+.btn-quiet{background:transparent;color:var(--ink-3);font-weight:600;min-height:44px}
+
+.link{
+  background:none;border:0;padding:0;
+  color:var(--accent);font:600 14px/1.4 var(--font);cursor:pointer;
+}
+
+/* --- сообщения --- */
+.note{
+  border-radius:var(--r);padding:13px 15px;font-size:14px;line-height:1.45;
+  border:1px solid transparent;
+}
+.note-error{background:rgba(255,107,87,.11);border-color:rgba(255,107,87,.32);color:#FFC0B6}
+.note-ok{background:rgba(46,209,151,.11);border-color:rgba(46,209,151,.3);color:#9FEBCF}
+.note-info{background:var(--accent-soft);border-color:rgba(46,155,255,.3);color:#B9DBFF}
+
+/* --- карточки кабинета --- */
+.card{
+  background:var(--bg-2);border:1px solid var(--line);
+  border-radius:18px;padding:18px;
+}
+.card + .card{margin-top:12px}
+
+.daybar{display:flex;align-items:baseline;gap:10px;margin-bottom:14px}
+.daybar .n{font-size:44px;font-weight:800;letter-spacing:-.04em;line-height:1;color:var(--accent)}
+.daybar .of{color:var(--ink-3);font-size:14px;font-weight:600}
+
+.track{height:6px;background:var(--bg-3);border-radius:99px;overflow:hidden}
+.track > i{display:block;height:100%;background:var(--saffron);border-radius:99px}
+
+.rows{display:flex;flex-direction:column;gap:0;margin-top:6px}
+.row{display:flex;justify-content:space-between;gap:14px;padding:11px 0;border-bottom:1px solid var(--line);font-size:14px}
+.row:last-child{border-bottom:0}
+.row span:first-child{color:var(--ink-3)}
+.row span:last-child{font-weight:600;text-align:right}
+
+/* --- варианты ответа --- */
+.opts{display:flex;flex-direction:column;gap:10px}
+.opts-2{flex-direction:row}
+.opts-2 .opt{flex:1}
+
+.opt{
+  min-height:var(--tap);
+  background:var(--bg-2);border:1px solid var(--line);border-radius:var(--r);
+  color:var(--ink);font:600 15px/1.3 var(--font);
+  padding:12px 16px;text-align:left;cursor:pointer;
+  transition:border-color .15s,background .15s;
+}
+.opts-2 .opt{text-align:center}
+.opt:active{transform:scale(.99)}
+.opt-on{border-color:var(--accent);background:var(--accent-soft);color:#fff}
+
+/* --- прогресс анкеты --- */
+.dots{display:flex;gap:5px;margin-bottom:4px}
+.dots i{flex:1;height:3px;border-radius:99px;background:var(--bg-3)}
+.dots i.on{background:var(--accent)}
+
+.qrow{display:flex;flex-direction:column;gap:8px;padding:14px 0;border-bottom:1px solid var(--line)}
+.qrow:last-child{border-bottom:0}
+.qrow p{margin:0;color:var(--ink)}
+
+/* --- ступень --- */
+.tier{
+  font-size:48px;font-weight:800;letter-spacing:-.03em;line-height:1;
+  color:var(--accent);margin:10px 0 6px;
+}
+
+/* --- главы плана --- */
+.card-accent{border-color:var(--accent);background:linear-gradient(180deg,var(--accent-soft),var(--bg-2))}
+.chapter-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:8px}
+.chapter-head h3{margin:0;font-size:17px}
+.chapter-n{
+  flex:0 0 32px;height:32px;border-radius:10px;
+  background:var(--bg-3);color:var(--ink-3);
+  display:flex;align-items:center;justify-content:center;
+  font-weight:800;font-size:15px;
+}
+.chapter-on .chapter-n{background:var(--accent);color:var(--accent-ink)}
+.chapter-on{border-color:var(--accent)}
+.chip-done{margin-left:auto;color:var(--jade);font-weight:700}
+
+.eyebrow{
+  font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:6px;
+}
+
+.spacer{flex:1;min-height:20px}
+
+.hint{font-size:13px;color:var(--ink-3);text-align:center;line-height:1.5}
+
+/* Скрытие без потери места в потоке разметки */
+[hidden]{display:none !important}
+
+@media (prefers-reduced-motion:reduce){
+  *{animation:none !important;transition:none !important}
+}

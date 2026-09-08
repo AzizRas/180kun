@@ -1,0 +1,15 @@
+{
+  "name": "LEVEL 180",
+  "short_name": "LEVEL 180",
+  "description": "180 дней, команда из шести человек и тренер, который читает ваши данные.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B0F14",
+  "theme_color": "#0B0F14",
+  "lang": "ru",
+  "icons": [
+    { "src": "/assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

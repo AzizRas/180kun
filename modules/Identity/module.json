@@ -1,0 +1,11 @@
+{
+  "name": "identity",
+  "title": "Личность",
+  "version": "1.0.0",
+  "description": "Регистрация по телефону и через Telegram, вход, сессии, коды подтверждения, язык интерфейса. Реализует контракт Auth.",
+  "table_prefix": "identity_",
+  "requires": [],
+  "provides": ["App\\Contracts\\Auth"],
+  "emits": ["user.registered", "user.logged_in", "user.logged_out", "user.lang_changed", "notify.code"],
+  "listens": []
+}
