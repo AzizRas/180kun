@@ -29,6 +29,14 @@ final class BotApi
         return $result !== null && ($result['ok'] ?? false) === true;
     }
 
+    /** Ссылка-приглашение в группу. Бот должен быть в ней админом. */
+    public function createChatInviteLink(string $chatId): ?string
+    {
+        $result = $this->call('createChatInviteLink', ['chat_id' => $chatId]);
+        $link   = $result['result']['invite_link'] ?? null;
+        return is_string($link) ? $link : null;
+    }
+
     public function setWebhook(string $url, string $secret): bool
     {
         $result = $this->call('setWebhook', [

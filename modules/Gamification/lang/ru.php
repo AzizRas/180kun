@@ -5,6 +5,7 @@ return [
     'xp.week_kept'  => 'Норма недели',
     'xp.comeback'   => 'Возвращение',
     'xp.chapter'    => 'Глава пройдена',
+    'xp.leader_term' => 'Срок лидера сквада',
     'xp.onboarding' => 'План построен',
 
     'gami.level'      => 'Уровень',

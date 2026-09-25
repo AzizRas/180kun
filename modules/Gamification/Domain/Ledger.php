@@ -26,7 +26,15 @@ final class Ledger implements Gamification
         'comeback'   => 100,   // возврат после 3+ дней — дороже всего
         'chapter'    => 400,   // завершённая глава
         'onboarding' => 50,    // пройден онбординг и построен план
+        'leader_term'=> 250,   // полный срок лидера сквада (§ 09)
     ];
+
+    /**
+     * Вехи, которые не упираются в суточный потолок. Каждая даётся один
+     * раз за конкретный повод (уникальность в базе), накрутить их нельзя,
+     * а срезать 400 за главу до 150 — значит обесценить саму веху.
+     */
+    public const CAP_EXEMPT = ['chapter', 'leader_term'];
 
     /**
      * Потолок начислений за сутки. Считается по дате начисления и
@@ -66,11 +74,13 @@ final class Ledger implements Gamification
             0
         );
 
-        $room = self::DAILY_CAP - $spent;
-        if ($room <= 0) {
-            return 0;
+        if (!in_array($reason, self::CAP_EXEMPT, true)) {
+            $room = self::DAILY_CAP - $spent;
+            if ($room <= 0) {
+                return 0;
+            }
+            $amount = min($amount, $room);
         }
-        $amount = min($amount, $room);
 
         try {
             $this->kernel->db()->insert('gami_ledger', [

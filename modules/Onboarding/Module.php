@@ -30,5 +30,19 @@ final class Module extends BaseModule
             }
             return $p;
         }, 'onboarding');
+
+        // Модуль сквадов включили, когда человек уже прошёл онбординг, —
+        // он спрашивает профиль событием. Отдаём только то, что нужно подбору.
+        $kernel->events->on('squad.profile_lookup', static function (array $p) use ($kernel): array {
+            $userId   = (int) ($p['user_id'] ?? 0);
+            $profiles = $kernel->container->get(Profiles::class);
+            $row      = $userId > 0 ? $profiles->find($userId) : null;
+            if ($row === null) {
+                return $p;
+            }
+            $p['profile']  = $profiles->publicProfile($row) + ['experience' => (string) $row['experience']];
+            $p['baseline'] = $profiles->baseline($userId);
+            return $p;
+        }, 'onboarding');
     }
 }

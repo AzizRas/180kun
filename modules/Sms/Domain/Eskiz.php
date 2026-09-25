@@ -8,7 +8,7 @@ use App\Kernel;
 /**
  * Адаптер шлюза Eskiz (notify.eskiz.uz).
  *
- * Токен живёт около месяца, поэтому кешируется в storage/ и обновляется
+ * Токен живёт около месяца, поэтому кешируется в папке данных и обновляется
  * только при 401. Ошибки не бросаются — возвращается false, вызывающий
  * код сам решает, что делать.
  *
@@ -81,7 +81,7 @@ final class Eskiz implements Gateway
 
     private function tokenFile(): string
     {
-        return $this->kernel->root . '/storage/eskiz.token';
+        return $this->kernel->dataDir() . '/eskiz.token';
     }
 
     private function token(): ?string

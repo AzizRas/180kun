@@ -5,6 +5,7 @@ return [
     'xp.week_kept'  => 'Hafta normasi',
     'xp.comeback'   => 'Qaytish',
     'xp.chapter'    => 'Bob yakunlandi',
+    'xp.leader_term' => 'Skvad liderligi muddati',
     'xp.onboarding' => 'Reja tuzildi',
 
     'gami.level'      => 'Daraja',

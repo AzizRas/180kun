@@ -40,5 +40,21 @@ final class Module extends BaseModule
             $p['plan_built'] = $plan !== null;
             return $p;
         }, 'planning');
+
+        // Синхронный старт (Р-07): кто-то (сейчас — модуль сквадов) назначил
+        // людям общий день 1. План сдвигается целиком, содержимое не меняется.
+        $kernel->events->on('season.scheduled', static function (array $p) use ($kernel): array {
+            $date = (string) ($p['start_date'] ?? '');
+            if (!preg_match('~^\d{4}-\d{2}-\d{2}$~', $date)) {
+                return $p;
+            }
+            foreach ((array) ($p['user_ids'] ?? []) as $userId) {
+                $kernel->db()->run(
+                    'UPDATE planning_plans SET start_date = ? WHERE user_id = ? AND active = 1',
+                    [$date, (int) $userId]
+                );
+            }
+            return $p;
+        }, 'planning');
     }
 }

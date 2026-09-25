@@ -68,8 +68,9 @@ return static function (Router $router, Kernel $kernel): void {
     }, ['auth' => true]);
 
     /**
-     * Вебхук бота. Пока обрабатывает только /start — присылает кнопку
-     * запуска Mini App. Всё остальное игнорируется молча.
+     * Вебхук бота. В личке — /start с кнопкой запуска Mini App. В группах —
+     * передаёт сообщения модулям событием telegram.group_message.
+     * Чтобы бот видел все сообщения группы, он должен быть там админом.
      */
     $router->post('/api/telegram/webhook', static function (Request $r, Kernel $k): Response {
         $expected = (string) $k->config->get('telegram.webhook_secret', '');
@@ -77,9 +78,32 @@ return static function (Router $router, Kernel $kernel): void {
             return Response::json(['error' => 'forbidden'], 403);
         }
 
-        $message = $r->input('message');
-        $chatId  = (string) ($message['chat']['id'] ?? '');
-        $text    = trim((string) ($message['text'] ?? ''));
+        $message  = $r->input('message');
+        $chatId   = (string) ($message['chat']['id'] ?? '');
+        $chatType = (string) ($message['chat']['type'] ?? 'private');
+        $text     = trim((string) ($message['text'] ?? ''));
+
+        // Сообщение в группе. Кто-то из модулей (сейчас — сквады) может
+        // вести по ним активность и ответить. Мы только узнаём человека
+        // и доставляем ответ; текст никуда не сохраняется.
+        if ($chatId !== '' && in_array($chatType, ['group', 'supergroup'], true)) {
+            if (empty($message['from']['is_bot'])) {
+                $tgId = (string) ($message['from']['id'] ?? '');
+                $user = $tgId !== '' ? $k->container->get(Users::class)->findByTgId($tgId) : null;
+
+                $result = $k->events->emit('telegram.group_message', [
+                    'chat_id' => $chatId,
+                    'user_id' => $user !== null ? (int) $user['id'] : null,
+                    'text'    => $text,
+                    'at'      => gmdate('c', (int) ($message['date'] ?? time())),
+                    'reply'   => null,
+                ]);
+                if (!empty($result['reply'])) {
+                    $k->container->get(BotApi::class)->sendMessage($chatId, (string) $result['reply']);
+                }
+            }
+            return Response::json(['ok' => true]);
+        }
 
         if ($chatId !== '' && str_starts_with($text, '/start')) {
             $url = rtrim((string) $k->config->get('app.url', ''), '/');

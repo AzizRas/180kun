@@ -43,11 +43,17 @@ final class Report
         $storage = $this->kernel->root . '/storage';
         $checks[] = $this->check('Папка storage/ доступна на запись', is_dir($storage) && is_writable($storage), $storage);
 
+        $dataDir = $this->kernel->dataDir();
+        if ($dataDir !== $storage) {
+            $checks[] = $this->check('Папка данных доступна на запись', is_dir($dataDir) && is_writable($dataDir), $dataDir);
+        }
+
         $configSecret = (string) $this->kernel->config->get('app.secret', '');
+        $secretOk = strlen($this->kernel->secret()) >= 32;   // создаёт ключ, если его ещё нет
         $checks[] = $this->check(
             'Секретный ключ задан',
-            $configSecret !== '' || is_file($storage . '/secret.key'),
-            $configSecret !== '' ? 'в config.php' : 'в storage/secret.key'
+            $secretOk && ($configSecret !== '' || is_file($dataDir . '/secret.key')),
+            $configSecret !== '' ? 'из APP_SECRET' : 'в ' . $dataDir . '/secret.key'
         );
 
         $checks[] = $this->check(
@@ -60,7 +66,8 @@ final class Report
         $checks[] = $this->check(
             'Пароль админки изменён',
             $this->kernel->config->get('admin.password') !== 'CHANGE_ME',
-            'config.php → admin.password'
+            'ADMIN_PASSWORD — понадобится, когда появится админка (срез 6)',
+            warnOnly: true
         );
 
         // --- База ---
@@ -74,6 +81,27 @@ final class Report
             $dbNote = $e->getMessage();
         }
         $checks[] = $this->check('База данных открывается', $dbOk, (string) $dbNote);
+
+        // В контейнерах (Railway, Fly, Render, Docker) файловая система
+        // временная: база внутри папки приложения стирается при каждом
+        // деплое вместе со всеми пользователями. Это молчаливая потеря
+        // данных, поэтому предупреждаем явно.
+        $dbPath      = (string) $this->kernel->config->get('db.path');
+        $insideApp   = str_starts_with(str_replace('\\', '/', $dbPath), str_replace('\\', '/', $this->kernel->root) . '/');
+        $containerish = getenv('RAILWAY_ENVIRONMENT') !== false
+            || getenv('RENDER') !== false
+            || getenv('FLY_APP_NAME') !== false
+            || is_file('/.dockerenv');
+
+        if ($containerish) {
+            $checks[] = $this->check(
+                'База лежит на постоянном томе',
+                !$insideApp,
+                $insideApp
+                    ? 'база внутри приложения — при следующем деплое она сотрётся. Подключите Volume (Railway найдёт его сам) или задайте DATA_DIR'
+                    : $dbPath
+            );
+        }
 
         $pending = [];
         if ($dbOk) {
@@ -132,6 +160,20 @@ final class Report
     private function check(string $title, bool $ok, string $note = '', bool $warnOnly = false): array
     {
         return ['title' => $title, 'ok' => $ok, 'note' => $note, 'warn' => $warnOnly];
+    }
+
+    /** Для посторонних: только общий статус, без путей, модулей и маршрутов. */
+    public function renderBrief(array $r): string
+    {
+        $e = static fn($s) => htmlspecialchars((string) $s, ENT_QUOTES, 'UTF-8');
+        return '<!doctype html><html lang="ru"><head><meta charset="utf-8">'
+            . '<meta name="viewport" content="width=device-width,initial-scale=1"><title>' . $e($r['app']) . '</title>'
+            . '<style>body{font:15px/1.6 system-ui,sans-serif;margin:0;background:#0f1620;color:#dfe7f1}'
+            . '.w{max-width:560px;margin:0 auto;padding:48px 20px}.ok{color:#43c598}.bad{color:#f0836f}.muted{color:#7d90a6}</style>'
+            . '</head><body><div class="w"><h1>' . $e($r['app']) . '</h1>'
+            . '<p class="' . ($r['ok'] ? 'ok">Работает.' : 'bad">Есть проблемы.') . '</p>'
+            . '<p class="muted">Подробности видит администратор после входа в свой аккаунт '
+            . 'или по адресу /health?key=… с ключом HEALTH_KEY.</p></div></body></html>';
     }
 
     public function render(array $r): string

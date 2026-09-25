@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require __DIR__ . '/_guard.php';   // только из командной строки, никогда из браузера
+
 /**
  * Смоук-тест без фреймворков: поднимает ядро в памяти и гоняет сценарии
  * через маршрутизатор. Запускать после каждого среза.
@@ -13,17 +15,21 @@ declare(strict_types=1);
 
 $root = dirname(__DIR__);
 
-// Изолированная база: боевую не трогаем.
-$testDb = $root . '/storage/db/smoke.sqlite';
-foreach ([$testDb, $testDb . '-wal', $testDb . '-shm'] as $f) {
+// Изолированные база и папка данных: боевые не трогаем. Задаются через
+// окружение, как на Railway, — поэтому автомиграции при загрузке ядра
+// проверяются здесь тем же путём, каким они сработают после деплоя.
+$testData = $root . '/storage/smoke-data';
+$testDb   = $testData . '/db/smoke.sqlite';
+foreach ([$testDb, $testDb . '-wal', $testDb . '-shm', $testData . '/.migrations', $testData . '/secret.key'] as $f) {
     if (is_file($f)) {
         unlink($f);
     }
 }
+putenv('DATA_DIR=' . $testData);
+putenv('DATABASE_PATH=' . $testDb);
 
 /** @var App\Kernel $kernel */
 $kernel = require $root . '/app/bootstrap.php';
-$kernel->config->set('db.path', $testDb);
 
 $pass = 0;
 $fail = 0;
@@ -47,9 +53,12 @@ function call(App\Kernel $k, string $method, string $path, array $body = [], arr
 }
 
 echo "\nМиграции\n";
+// Ядро уже применило их само при загрузке — как на свежем деплое.
+check('автомиграции создали таблицы до первого запроса', $kernel->db()->tableExists('identity_users'));
+check('отпечаток миграций записан в папку данных', is_file($testData . '/.migrations'));
+check('секретный ключ живёт в папке данных', $kernel->secret() !== '' && is_file($testData . '/secret.key'));
 $m = (new App\Migrator($kernel))->migrate();
-check('применились без ошибок', $m['errors'] === [], implode('; ', $m['errors']));
-check('таблица identity_users создана', $kernel->db()->tableExists('identity_users'));
+check('повторный запуск ничего не применяет', $m['errors'] === [] && $m['applied'] === [], implode('; ', $m['errors']));
 
 echo "\nМаршруты\n";
 check('несуществующий путь отдаёт 404', call($kernel, 'GET', '/api/nope')['status'] === 404);
@@ -66,6 +75,20 @@ check('регистрация возвращает 201', $r['status'] === 201, j
 check('выдан токен сессии', !empty($r['json']['token']));
 check('телефон нормализован и замаскирован', str_starts_with((string) ($r['json']['user']['phone'] ?? ''), '+998'));
 $token = (string) ($r['json']['token'] ?? '');
+
+echo "\nДиагностика закрыта от посторонних\n";
+$kernel->config->set('app.debug', false);
+$kernel->config->set('admin.health_key', 'k-' . bin2hex(random_bytes(4)));
+$anon = call($kernel, 'GET', '/health.json');
+check('аноним видит только статус', isset($anon['json']['ok']) && !isset($anon['json']['checks']) && !isset($anon['json']['routes']));
+$anonHtml = $kernel->handle(App\Request::make('GET', '/health'))->body;
+check('HTML-версия для анонима без путей и маршрутов', !str_contains($anonHtml, '/api/') && !str_contains($anonHtml, $root));
+$byKey = call($kernel, 'GET', '/health.json?key=' . $kernel->config->get('admin.health_key'));
+check('ключ HEALTH_KEY открывает полный отчёт', isset($byKey['json']['checks']));
+check('неверный ключ не открывает', !isset(call($kernel, 'GET', '/health.json?key=wrong')['json']['checks']));
+$asAdmin = call($kernel, 'GET', '/health.json', [], ['x-session-token' => $token]);
+check('первый пользователь — админ и видит отчёт', isset($asAdmin['json']['checks']));
+$kernel->config->set('app.debug', true);
 
 $dup = call($kernel, 'POST', '/api/auth/register', ['phone' => '+998 90 123 45 67', 'password' => 'parol12345']);
 check('повторная регистрация отклонена', $dup['status'] === 422 && ($dup['json']['error'] ?? '') === 'phone_taken');
@@ -466,6 +489,419 @@ $rrAdmin = call($kernel, 'GET', '/api/metrics/return-rate', [], ['x-session-toke
 check('администратор метрику видит', $rrAdmin['status'] === 200 && isset($rrAdmin['json']['rate']),
     'статус ' . $rrAdmin['status']);
 
+// ======================================================================
+// СРЕЗ 4 — СКВАДЫ
+// ======================================================================
+
+echo "\nПодбор сквадов: жёсткие правила Р-06 на случайных пулах\n";
+use Modules\Squad\Domain\Matcher as SquadMatcher;
+use Modules\Squad\Domain\Scoring as SquadScoring;
+
+$synth = static function (int $n, int $seed): array {
+    mt_srand($seed);
+    $out = [];
+    for ($i = 1; $i <= $n; $i++) {
+        $t = [0, 0, 0, 0, 1, 1, 1, 2, 2, 3][mt_rand(0, 9)];
+        $out[] = [
+            'user_id' => $i, 'goal_dir' => mt_rand(0, 9) < 8 ? 'lose' : 'gain', 'sex' => mt_rand(0, 1) ? 'male' : 'female',
+            'age' => mt_rand(23, 36), 'lang' => mt_rand(0, 9) < 6 ? 'ru' : 'uz', 'tier' => 'T' . $t,
+            'steps' => [3000, 5500, 9000, 12500][$t] + mt_rand(-900, 900), 'time_budget' => [15, 30, 45, 60][mt_rand(0, 3)],
+            'bmi' => mt_rand(220, 340) / 10, 'window' => ['morning', 'day', 'evening'][mt_rand(0, 2)], 'social' => mt_rand(1, 3),
+            'experience' => ['never_tried', 'lost_motivation', 'no_time'][mt_rand(0, 2)], 'mixed_ok' => mt_rand(0, 3) === 0,
+            'commit' => mt_rand(1, 3),
+        ];
+    }
+    return $out;
+};
+
+$violations = 0; $dupes = 0; $badSize = 0; $manyAnchors = 0; $placedTotal = 0; $nondet = 0;
+foreach ([11, 12, 13, 14, 15] as $seed) {
+    $pool = $synth(300, $seed);
+    $byId = array_column($pool, null, 'user_id');
+    $res  = SquadMatcher::match($pool);
+    $seen = [];
+    foreach ($res['squads'] as $sq) {
+        $members = array_map(static fn($id) => $byId[$id], $sq['members']);
+        $violations += SquadMatcher::violations($members) === [] ? 0 : 1;
+        $badSize    += (count($members) < 5 || count($members) > 7) ? 1 : 0;
+        $manyAnchors += SquadMatcher::anchors($members) > 1 ? 1 : 0;
+        foreach ($sq['members'] as $id) {
+            $dupes += isset($seen[$id]) ? 1 : 0;
+            $seen[$id] = true;
+        }
+    }
+    $placedTotal += count($seen);
+    $nondet += json_encode(SquadMatcher::match(array_reverse($pool))) === json_encode($res) ? 0 : 1;
+}
+check('1500 кандидатов: ни одно жёсткое правило не нарушено', $violations === 0, "нарушений: {$violations}");
+check('никто не попал в два сквада', $dupes === 0);
+check('размер каждого сквада 5–7', $badSize === 0);
+check('якорей не больше одного', $manyAnchors === 0);
+check('подбор детерминирован: порядок заявок не влияет', $nondet === 0);
+// Случайный пул разбит на 8 страт × 4 ступени — часть людей честно не
+// проходит правила. Живые пулы однороднее; здесь проверяем, что алгоритм
+// не «сдаётся» раньше времени.
+check('большинство распределено даже в случайном пуле', $placedTotal >= 1500 * 0.6, "распределено {$placedTotal}");
+
+// Точечные правила на ручных составах.
+$base = ['goal_dir' => 'lose', 'sex' => 'male', 'age' => 28, 'lang' => 'ru', 'tier' => 'T0', 'steps' => 3000,
+         'time_budget' => 30, 'bmi' => 28.0, 'window' => 'evening', 'social' => 2, 'experience' => 'no_time',
+         'mixed_ok' => false, 'commit' => 2];
+$six = [];
+for ($i = 1; $i <= 6; $i++) {
+    $six[] = ['user_id' => $i] + $base;
+}
+check('однородная шестёрка допустима', SquadMatcher::violations($six) === []);
+$x = $six; $x[0]['goal_dir'] = 'gain';
+check('снижение и набор вместе — запрещено', in_array('goal', SquadMatcher::violations($x), true));
+$x = $six; $x[0]['tier'] = 'T2';
+check('T0 рядом с T2 — запрещено', in_array('tier_spread', SquadMatcher::violations($x), true));
+$x = $six; $x[0]['tier'] = 'T1'; $x[1]['tier'] = 'T1';
+check('два якоря — запрещено', in_array('anchors_many', SquadMatcher::violations($x), true));
+$x = $six; $x[0]['lang'] = 'uz';
+check('разные языки — запрещено', in_array('lang', SquadMatcher::violations($x), true));
+$x = $six; $x[0]['sex'] = 'female';
+check('смешанный без согласия — запрещено', in_array('sex', SquadMatcher::violations($x), true));
+$x = $six; foreach ($x as &$m) { $m['mixed_ok'] = true; } unset($m); $x[0]['sex'] = 'female';
+check('смешанный, если все согласны, — можно', SquadMatcher::violations($x) === []);
+$x = $six; $x[0]['age'] = 40;
+check('возраст вне ±6 — запрещено', in_array('age', SquadMatcher::violations($x), true));
+$x = $six; $x[0]['window'] = 'morning'; $x[1]['window'] = 'morning'; $x[2]['window'] = 'day';
+check('нет общего окна у двух третей — запрещено', in_array('window', SquadMatcher::violations($x), true));
+check('коллеги в одном скваде — запрещено', in_array('related', SquadMatcher::violations($six, [SquadMatcher::relationKey(2, 5) => true]), true));
+
+// Родственники при сборке расходятся по разным составам.
+$twelve = [];
+for ($i = 1; $i <= 12; $i++) {
+    $twelve[] = ['user_id' => $i, 'tier' => $i % 6 === 0 ? 'T1' : 'T0'] + $base;
+}
+$rel = [SquadMatcher::relationKey(1, 2) => true, SquadMatcher::relationKey(3, 4) => true];
+$m12 = SquadMatcher::match($twelve, $rel);
+$together = false;
+foreach ($m12['squads'] as $sq) {
+    if ((in_array(1, $sq['members'], true) && in_array(2, $sq['members'], true)) || (in_array(3, $sq['members'], true) && in_array(4, $sq['members'], true))) {
+        $together = true;
+    }
+}
+check('родня при сборке попадает в разные сквады', count($m12['squads']) === 2 && !$together, json_encode($m12));
+check('в каждом скваде ровно один якорь, когда якоря есть', array_sum(array_map(static fn($s) => $s['anchor'] !== null ? 1 : 0, $m12['squads'])) === 2);
+$c1 = SquadMatcher::cost(array_slice($twelve, 0, 5));
+check('штраф за отсутствие якоря заложен в цену', $c1 >= 4.0, (string) $c1);
+
+echo "\nКомандный счёт по слабейшему звену (Р-08)\n";
+$s = SquadScoring::score([100, 100, 100, 100, 100, 100]);
+check('все выполнили — 100', $s['score'] === 100.0, json_encode($s));
+$s = SquadScoring::score([100, 100, 100, 100, 100, 0]);
+check('один выпал — команда получает 60, а не 83', $s['score'] === 60.0, json_encode($s));
+$s = SquadScoring::score([150, 150, 150, 150, 150, 50]);
+check('перевыполнение не вытягивает команду', $s['score'] === SquadScoring::score([100, 100, 100, 100, 100, 50])['score']);
+// Одинаковый суммарный труд (525): распределённый поровну даёт больше очков.
+$helped = SquadScoring::score([87.5, 87.5, 87.5, 87.5, 87.5, 87.5]);
+$solo   = SquadScoring::score([100, 100, 100, 100, 100, 25]);
+check('при том же труде подтянуть отстающего выгоднее', $helped['score'] > $solo['score'], $helped['score'] . ' vs ' . $solo['score']);
+$s = SquadScoring::score([100, 100, 100, 100, 100, 100], 2);
+check('прибавка за вернувшихся после пропуска', $s['score'] === 105.0, json_encode($s));
+
+// ---------------- живой сценарий ----------------
+
+echo "\nВолна: 48 человек → 8 сквадов по шесть\n";
+
+// Тестовая «доставка» в Telegram: запоминаем, что ушло бы в группы.
+$sentToGroups = [];
+$kernel->events->on('telegram.group_send', static function (array $p) use (&$sentToGroups): array {
+    $sentToGroups[] = $p;
+    $p['sent'] = true;
+    return $p;
+}, 'smoke', 10);
+
+$adminH = ['x-session-token' => (string) ($adminLogin['json']['token'] ?? '')];
+
+$onboard = static function (string $phone, array $ans, int $steps, string $lang, int $workouts = 0) use ($kernel): array {
+    $reg = call($kernel, 'POST', '/api/auth/register', ['phone' => $phone, 'password' => 'parol12345', 'name' => 'U' . substr($phone, -4)])['json'];
+    $h   = ['x-session-token' => (string) ($reg['token'] ?? '')];
+    call($kernel, 'POST', '/api/me/lang', ['lang' => $lang], $h);
+    call($kernel, 'POST', '/api/onboarding/answers', $ans, $h);
+    call($kernel, 'POST', '/api/onboarding/screening', ['answers' => []], $h);
+    for ($d = 1; $d <= 7; $d++) {
+        call($kernel, 'POST', '/api/onboarding/baseline', ['steps' => $steps, 'workouts' => $workouts, 'sleep_min' => 420], $h);
+    }
+    call($kernel, 'POST', '/api/onboarding/complete', [], $h);
+    return ['id' => (int) ($reg['user']['id'] ?? 0), 'h' => $h];
+};
+
+// Восемь групп: по пять человек T0 и один T1 (якорь). Языки и пол разные.
+$groups = [
+    ['male', 'ru'], ['male', 'ru'], ['male', 'ru'], ['female', 'ru'],
+    ['female', 'ru'], ['male', 'uz'], ['male', 'uz'], ['female', 'uz'],
+];
+$people = [];
+$phoneN = 970000100;
+foreach ($groups as $g => [$sex, $lang]) {
+    for ($i = 0; $i < 6; $i++) {
+        $anchor = $i === 5;
+        $ans = [
+            'goal_dir' => 'lose', 'sex' => $sex, 'birth_year' => (int) gmdate('Y') - (26 + ($g % 3) * 2 + ($i % 2)),
+            'height_cm' => 175, 'weight_kg' => 88.0 + $i, 'time_budget' => 30, 'window' => 'evening',
+            'social' => $i === 0 ? 3 : 2, 'experience' => $i % 2 ? 'never_tried' : 'lost_motivation',
+        ];
+        $people[] = $onboard((string) $phoneN++, $ans, $anchor ? 5200 : 3000 + $i * 100, $lang) + ['group' => $g];
+    }
+}
+$ids = array_column($people, 'id');
+check('48 человек прошли онбординг и попали в пул', (int) $kernel->db()->value(
+    "SELECT COUNT(*) FROM squad_pool WHERE status = 'waiting' AND user_id IN (" . implode(',', $ids) . ')', [], 0
+) === 48);
+
+$waitView = call($kernel, 'GET', '/api/squad', [], $people[0]['h']);
+check('до волны человек видит «вы в списке»', ($waitView['json']['status'] ?? '') === 'waiting' && array_key_exists('wave', $waitView['json']) && $waitView['json']['wave'] === null, json_encode($waitView['json'], JSON_UNESCAPED_UNICODE));
+
+$prefs = call($kernel, 'POST', '/api/squad/prefs', ['mixed_ok' => false, 'commit' => 3], $people[0]['h']);
+check('вопросы для подбора сохраняются', $prefs['status'] === 200 && (int) ($prefs['json']['data']['commit_level'] ?? 0) === 3);
+check('неверный ответ отклонён', call($kernel, 'POST', '/api/squad/prefs', ['commit' => 7], $people[0]['h'])['status'] === 422);
+// Возвращаем 2, чтобы не менять цену составов в тесте.
+call($kernel, 'POST', '/api/squad/prefs', ['mixed_ok' => false, 'commit' => 2], $people[0]['h']);
+
+check('обычному участнику панель модератора закрыта', call($kernel, 'GET', '/api/admin/squad/waves', [], $people[1]['h'])['status'] === 403);
+
+$startDate = gmdate('Y-m-d', time() + 3 * 86400);
+$w = call($kernel, 'POST', '/api/admin/squad/waves', ['start_date' => $startDate, 'title' => 'Осень'], $adminH);
+$waveId = (int) ($w['json']['data']['id'] ?? 0);
+check('модератор создал волну', $w['status'] === 200 && $waveId > 0, json_encode($w['json'], JSON_UNESCAPED_UNICODE));
+check('дата в прошлом отклонена', call($kernel, 'POST', '/api/admin/squad/waves', ['start_date' => $ago(1)], $adminH)['status'] === 422);
+
+$plan0 = call($kernel, 'GET', '/api/plan', [], $people[0]['h']);
+check('план сдвинут на день старта волны (Р-07)', ($plan0['json']['plan']['start_date'] ?? '') === $startDate, (string) ($plan0['json']['plan']['start_date'] ?? '?'));
+$waitView = call($kernel, 'GET', '/api/squad', [], $people[0]['h']);
+check('человек видит дату старта и сколько ждать', ($waitView['json']['wave']['days_left'] ?? 0) === 3);
+
+$match = call($kernel, 'POST', '/api/admin/squad/waves/' . $waveId . '/match', [], $adminH);
+check('подбор отработал', $match['status'] === 200, json_encode($match['json'], JSON_UNESCAPED_UNICODE));
+$waveView = call($kernel, 'GET', '/api/admin/squad/waves/' . $waveId, [], $adminH)['json'];
+$proposals = $waveView['squads'] ?? [];
+
+// В пуле есть и человек из ранних тестов — алгоритм вправе подсадить его
+// седьмым. Наши сквады — те, где большинство из этих 48.
+$ourSquads = array_values(array_filter($proposals, static function ($sq) use ($ids) {
+    return count(array_intersect(array_column($sq['members'], 'user_id'), $ids)) >= 5;
+}));
+$placed48 = [];
+foreach ($ourSquads as $sq) {
+    foreach (array_intersect(array_column($sq['members'], 'user_id'), $ids) as $uid) {
+        $placed48[$uid] = true;
+    }
+}
+check('собрано 8 сквадов из 48 человек', count($ourSquads) === 8, 'сквадов: ' . count($ourSquads));
+check('все 48 распределены', count($placed48) === 48, (string) count($placed48));
+$allSix = true; $oneAnchor = true; $clean = true;
+foreach ($ourSquads as $sq) {
+    $allSix    = $allSix && in_array(count($sq['members']), [6, 7], true);
+    $oneAnchor = $oneAnchor && count(array_filter($sq['members'], static fn($m) => $m['role'] === 'anchor')) === 1;
+    $clean     = $clean && $sq['rules'] === [];
+}
+check('в каждом шесть человек (седьмой — только подсаженный)', $allSix);
+check('в каждом ровно один якорь', $oneAnchor);
+check('ни один состав не нарушает правил', $clean);
+check('модератор видит код для привязки группы', !empty($ourSquads[0]['code']));
+
+$waitingUser = $people[0];
+$squadViewEarly = call($kernel, 'GET', '/api/squad', [], $waitingUser['h']);
+check('до утверждения участник состав не видит', ($squadViewEarly['json']['status'] ?? '') === 'waiting');
+
+// Ручная перестановка, нарушающая правила, не проходит.
+$ruMale = null; $uzSquad = null;
+foreach ($ourSquads as $sq) {
+    if ($sq['lang'] === 'uz' && $uzSquad === null) { $uzSquad = $sq; }
+    if ($sq['lang'] === 'ru' && $sq['sex'] === 'male' && $ruMale === null) { $ruMale = $sq; }
+}
+$badMove = call($kernel, 'POST', '/api/admin/squad/move', ['user_id' => $ruMale['members'][0]['user_id'], 'squad_id' => $uzSquad['id']], $adminH);
+check('перестановка в сквад на другом языке отклонена', $badMove['status'] === 422 && in_array('lang', array_column($badMove['json']['rules'] ?? [], 'code'), true));
+
+foreach ($ourSquads as $sq) {
+    call($kernel, 'POST', '/api/admin/squad/' . $sq['id'] . '/approve', [], $adminH);
+}
+$approved = (int) $kernel->db()->value("SELECT COUNT(*) FROM squad_squads WHERE wave_id = ? AND status = 'approved'", [$waveId], 0);
+check('модератор утвердил все восемь', $approved === count($ourSquads));
+
+$started = call($kernel, 'POST', '/api/admin/squad/waves/' . $waveId . '/start', [], $adminH);
+check('волна стартовала', $started['status'] === 200, json_encode($started['json'], JSON_UNESCAPED_UNICODE));
+check('день 1 — назначенная дата волны', ($started['json']['data']['start_date'] ?? '') === $startDate);
+check('у каждого сквада есть лидер', (int) $kernel->db()->value("SELECT COUNT(*) FROM squad_squads WHERE wave_id = ? AND status = 'active' AND leader_id IS NOT NULL", [$waveId], 0) === count($ourSquads));
+
+$sqA = (int) $ourSquads[0]['id'];
+$sqB = (int) $ourSquads[1]['id'];
+$membersA = array_column($ourSquads[0]['members'], 'user_id');
+$membersB = array_column($ourSquads[1]['members'], 'user_id');
+$hOf = static function (int $uid) use ($people): array {
+    foreach ($people as $p) { if ($p['id'] === $uid) { return $p['h']; } }
+    return [];
+};
+$day = static fn(int $n): string => gmdate('Y-m-d', strtotime($startDate . ' 00:00:00 UTC') + ($n - 1) * 86400);
+
+$viewA = call($kernel, 'GET', '/api/squad?date=' . $day(1), [], $hOf($membersA[0]));
+check('участник видит свой сквад', ($viewA['json']['status'] ?? '') === 'active' && count($viewA['json']['squad']['members'] ?? []) === 6);
+check('день сквада считается от старта', ($viewA['json']['squad']['day'] ?? 0) === 1);
+$leaderA = (int) $kernel->db()->value('SELECT leader_id FROM squad_squads WHERE id = ?', [$sqA]);
+check('первым лидером стал самый общительный по анкете', $leaderA === (int) $membersA[0], "лидер {$leaderA}");
+
+echo "\nЧат сквада в Telegram\n";
+$codeA = (string) $kernel->db()->value('SELECT code FROM squad_squads WHERE id = ?', [$sqA]);
+$bind = $kernel->events->emit('telegram.group_message', ['chat_id' => '-100500', 'user_id' => null, 'text' => '/bind ' . $codeA, 'reply' => null]);
+check('группа привязывается командой /bind', str_contains((string) ($bind['reply'] ?? ''), $codeA), (string) ($bind['reply'] ?? ''));
+check('карточки участников ушли в группу', $sentToGroups !== [] && substr_count((string) end($sentToGroups)['text'], '•') === 6);
+$contactAt = (string) $kernel->db()->value('SELECT first_contact_at FROM squad_squads WHERE id = ?', [$sqA]);
+check('время первого контакта записано', $contactAt !== '');
+$bindAgain = $kernel->events->emit('telegram.group_message', ['chat_id' => '-100500', 'user_id' => null, 'text' => '/bind ZZZZZZ', 'reply' => null]);
+check('неизвестный код — понятный ответ', str_contains((string) $bindAgain['reply'], 'кода') || str_contains((string) $bindAgain['reply'], 'kod'));
+
+$reactAt = gmdate('c', strtotime($contactAt) + 12 * 60);
+$kernel->events->emit('telegram.group_message', ['chat_id' => '-100500', 'user_id' => $membersA[2], 'text' => 'Всем привет!', 'at' => $reactAt]);
+check('первая реакция живого человека зафиксирована', (string) $kernel->db()->value('SELECT first_reaction_at FROM squad_squads WHERE id = ?', [$sqA]) === $reactAt);
+$metrics = call($kernel, 'GET', '/api/admin/squad/metrics', [], $adminH)['json'];
+check('метрика «до первой реакции» — 12 минут', ($metrics['reaction_minutes']['squads'] ?? null) == 12.0, json_encode($metrics['reaction_minutes'] ?? null));
+
+// Самый активный в чате за первые три дня становится лидером на 3-й день.
+for ($i = 0; $i < 5; $i++) {
+    $kernel->events->emit('telegram.group_message', ['chat_id' => '-100500', 'user_id' => $membersA[3], 'text' => 'сообщение', 'at' => $day(2) . 'T10:0' . $i . ':00+00:00']);
+}
+call($kernel, 'GET', '/api/squad?date=' . $day(4), [], $hOf($membersA[0]));
+check('на 3-й день лидер — самый активный в чате', (int) $kernel->db()->value('SELECT leader_id FROM squad_squads WHERE id = ?', [$sqA]) === (int) $membersA[3]);
+
+echo "\nНеделя сквада и командный счёт\n";
+// Сквад A: все шестеро по 4 дня. Сквад B: пятеро по 4, один не отмечался.
+$ins = static function (int $uid, int $fromDay, int $n) use ($kernel, $day): void {
+    for ($d = $fromDay; $d < $fromDay + $n; $d++) {
+        $kernel->db()->run('INSERT OR REPLACE INTO checkin_days (user_id, date, done, created_at) VALUES (?, ?, ?, ?)', [$uid, $day($d), 'yes', gmdate('c')]);
+    }
+};
+foreach ($membersA as $uid) { $ins((int) $uid, 1, 7); }
+foreach ($membersB as $k => $uid) { if ($k < 5) { $ins((int) $uid, 1, 4); } }
+
+$viewA8 = call($kernel, 'GET', '/api/squad?date=' . $day(8), [], $hOf($membersA[1]));
+$scoreA = (float) $kernel->db()->value('SELECT score FROM squad_week_scores WHERE squad_id = ? AND week_no = 1', [$sqA]);
+check('неделя сквада A: все выполнили — 100', $scoreA === 100.0, (string) $scoreA);
+call($kernel, 'GET', '/api/squad?date=' . $day(8), [], $hOf($membersB[0]));
+$scoreB = (float) $kernel->db()->value('SELECT score FROM squad_week_scores WHERE squad_id = ? AND week_no = 1', [$sqB]);
+check('неделя сквада B: один выпал — 60 на всех', $scoreB === 60.0, (string) $scoreB);
+check('история недель видна участнику', count($viewA8['json']['history'] ?? []) === 1);
+call($kernel, 'GET', '/api/squad?date=' . $day(9), [], $hOf($membersA[1]));
+check('закрытая неделя не пересчитывается повторно', (int) $kernel->db()->value('SELECT COUNT(*) FROM squad_week_scores WHERE squad_id = ?', [$sqA]) === 1);
+
+echo "\nЖизненный цикл участника (§ 05)\n";
+$silent = (int) $membersB[5];   // не отмечался с начала
+$st = static fn(int $sq, int $uid): string => (string) $kernel->db()->value('SELECT status FROM squad_members WHERE squad_id = ? AND user_id = ?', [$sq, $uid]);
+call($kernel, 'GET', '/api/squad?date=' . $day(5), [], $hOf($membersB[0]));
+check('4 дня тишины — ещё в деле', $st($sqB, $silent) === 'active');
+call($kernel, 'GET', '/api/squad?date=' . $day(6), [], $hOf($membersB[0]));
+check('5 дней — «на паузе»', $st($sqB, $silent) === 'paused');
+$viewB = call($kernel, 'GET', '/api/squad?date=' . $day(6), [], $hOf($membersB[0]))['json'];
+$silentView = array_values(array_filter($viewB['squad']['members'] ?? [], static fn($m) => $m['user_id'] === $silent))[0] ?? [];
+check('сквад видит паузу, но не очки и не серии', ($silentView['status'] ?? '') === 'paused' && !isset($silentView['xp']) && !isset($silentView['streak']));
+call($kernel, 'GET', '/api/squad?date=' . $day(11), [], $hOf($membersB[0]));
+check('10 дней — восстановление, место заморожено', $st($sqB, $silent) === 'recovery');
+
+// Чтобы сквад B не ушёл в роспуск, остальные продолжают отмечаться.
+foreach ($membersB as $k => $uid) { if ($k < 5) { $ins((int) $uid, 5, 12); } }
+call($kernel, 'GET', '/api/squad?date=' . $day(15), [], $hOf($membersB[0]));
+check('14 дней — место освобождено', $st($sqB, $silent) === 'left');
+check('после ухода одного замена не нужна: пятеро доигрывают', count(array_filter(
+    call($kernel, 'GET', '/api/squad?date=' . $day(15), [], $hOf($membersB[0]))['json']['squad']['members'] ?? [],
+    static fn($m) => true
+)) === 5);
+
+$ins($silent, 20, 1);
+call($kernel, 'GET', '/api/squad?date=' . $day(20), [], $hOf($membersB[0]));
+check('вернулся в течение 30 дней — место снова его', $st($sqB, $silent) === 'active');
+
+echo "\nЛидер: ротация, отказ, бездействие, награда\n";
+// Сквад A: лидер — membersA[3] с дня 1 (срок до дня 15). Даём ему быть активным.
+$ins((int) $membersA[3], 5, 10);
+foreach ($membersA as $uid) { $ins((int) $uid, 5, 12); }
+call($kernel, 'GET', '/api/squad?date=' . $day(15), [], $hOf($membersA[0]));
+$terms = $kernel->db()->all('SELECT user_id, end_reason FROM squad_leader_terms WHERE squad_id = ? ORDER BY id', [$sqA]);
+$completed = array_values(array_filter($terms, static fn($t) => $t['end_reason'] === 'completed'));
+check('срок 14 дней завершён и роль перешла по кругу', count($completed) === 1 && (int) $completed[0]['user_id'] === (int) $membersA[3]);
+$newLeader = (int) $kernel->db()->value('SELECT leader_id FROM squad_squads WHERE id = ?', [$sqA]);
+check('новый лидер — следующий по кругу', $newLeader !== (int) $membersA[3] && in_array($newLeader, array_map('intval', $membersA), true));
+$xpLeader = (int) $kernel->db()->value("SELECT amount FROM gami_ledger WHERE user_id = ? AND reason = 'leader_term'", [(int) $membersA[3]]);
+check('за полный срок лидера — 250 XP, без суточного потолка', $xpLeader === 250, (string) $xpLeader);
+
+$panel = call($kernel, 'GET', '/api/squad/leader?date=' . $day(15), [], $hOf($newLeader));
+check('панель лидера открывается лидеру', $panel['status'] === 200 && count($panel['json']['data']['duties'] ?? []) === 3);
+check('панель лидера закрыта остальным', call($kernel, 'GET', '/api/squad/leader?date=' . $day(15), [], $hOf((int) $membersA[3]))['status'] === 403);
+$help = call($kernel, 'POST', '/api/squad/help', ['user_id' => (int) $membersA[4]], $hOf($newLeader));
+check('лидер может отметить «нужна помощь»', $help['status'] === 200);
+check('исключать людей лидер не может', call($kernel, 'POST', '/api/admin/squad/' . $sqA . '/remove', ['user_id' => (int) $membersA[4]], $hOf($newLeader))['status'] === 403);
+
+$decl = call($kernel, 'POST', '/api/squad/leader/decline', [], $hOf($newLeader));
+$afterDecline = (int) $kernel->db()->value('SELECT leader_id FROM squad_squads WHERE id = ?', [$sqA]);
+check('отказ одним нажатием — роль у следующего', $decl['status'] === 200 && $afterDecline !== $newLeader && $afterDecline > 0);
+check('за отказ награды нет', (int) $kernel->db()->value("SELECT COUNT(*) FROM gami_ledger WHERE user_id = ? AND reason = 'leader_term'", [$newLeader]) === 0);
+
+// Бездействие: лидер не отмечается и не пишет 4 дня.
+$kernel->db()->run('DELETE FROM checkin_days WHERE user_id = ? AND date > ?', [$afterDecline, $day(15)]);
+foreach ($membersA as $uid) { if ((int) $uid !== $afterDecline) { $ins((int) $uid, 16, 6); } }
+call($kernel, 'GET', '/api/squad?date=' . $day(20), [], $hOf($membersA[0]));
+$afterIdle = (int) $kernel->db()->value('SELECT leader_id FROM squad_squads WHERE id = ?', [$sqA]);
+check('4 дня бездействия — роль молча переходит дальше', $afterIdle !== $afterDecline,
+    json_encode($kernel->db()->all('SELECT user_id, started_on, ended_on, end_reason FROM squad_leader_terms WHERE squad_id = ?', [$sqA])));
+
+echo "\nЗамена и роспуск\n";
+// Сквад C: трое уходят молча — осталось трое, а в пуле есть подходящий человек.
+$sqC = (int) $ourSquads[2]['id'];
+$membersC = array_map('intval', array_column($ourSquads[2]['members'], 'user_id'));
+foreach (array_slice($membersC, 0, 3) as $uid) { $ins($uid, 1, 40); }
+$spare = $onboard('977777001', [
+    'goal_dir' => 'lose', 'sex' => $ourSquads[2]['sex'], 'birth_year' => (int) gmdate('Y') - 27, 'height_cm' => 175,
+    'weight_kg' => 90.0, 'time_budget' => 30, 'window' => 'evening', 'social' => 2, 'experience' => 'no_time',
+], 3100, $ourSquads[2]['lang']);
+call($kernel, 'GET', '/api/squad?date=' . $day(16), [], $hOf($membersC[0]));
+$seatsC = (int) $kernel->db()->value("SELECT COUNT(*) FROM squad_members WHERE squad_id = ? AND status <> 'left'", [$sqC], 0);
+check('меньше пяти и до конца >45 дней — замена из листа ожидания', $seatsC >= 4 && (int) $kernel->db()->value("SELECT COUNT(*) FROM squad_members WHERE squad_id = ? AND user_id = ? AND status = 'active'", [$sqC, $spare['id']], 0) === 1);
+$spareView = call($kernel, 'GET', '/api/squad?date=' . $day(16), [], $spare['h'])['json'];
+check('новичок видит свой сквад', ($spareView['status'] ?? '') === 'active');
+
+// Сквад D: все молчат — активных меньше трёх дольше 10 дней → роспуск.
+$sqD = (int) $ourSquads[3]['id'];
+$membersD = array_map('intval', array_column($ourSquads[3]['members'], 'user_id'));
+$ins($membersD[0], 1, 3);
+foreach ([6, 10, 18, 27] as $d) { call($kernel, 'GET', '/api/squad?date=' . $day($d), [], $hOf($membersD[0])); }
+check('роспуск при долгой нехватке активных', (string) $kernel->db()->value('SELECT status FROM squad_squads WHERE id = ?', [$sqD]) === 'disbanded');
+check('после роспуска люди снова ждут сквад, а не выброшены', (int) $kernel->db()->value(
+    "SELECT COUNT(*) FROM squad_pool WHERE status = 'waiting' AND user_id IN (" . implode(',', $membersD) . ')', [], 0
+) === 6);
+
+echo "\nВебхук Telegram передаёт сообщения групп модулям\n";
+$kernel->config->set('telegram.webhook_secret', 'smoke-secret');
+$seenGroup = null;
+$kernel->events->on('telegram.group_message', static function (array $p) use (&$seenGroup): array {
+    $seenGroup = $p;
+    return $p;
+}, 'smoke', 200);
+$wh = $kernel->handle(App\Request::make('POST', '/api/telegram/webhook', ['message' => [
+    'message_id' => 1, 'date' => time(), 'text' => 'Салом!',
+    'chat' => ['id' => -100777, 'type' => 'supergroup'],
+    'from' => ['id' => 555777, 'is_bot' => false, 'first_name' => 'Aziz'],
+]], [], ['x-telegram-bot-api-secret-token' => 'smoke-secret']));
+check('вебхук принимает сообщение группы', $wh->status === 200);
+check('человек узнан по Telegram ID', ($seenGroup['user_id'] ?? null) === (int) $kernel->db()->value("SELECT id FROM identity_users WHERE tg_id = '555777'"));
+$seenGroup = null;
+$kernel->handle(App\Request::make('POST', '/api/telegram/webhook', ['message' => [
+    'message_id' => 2, 'date' => time(), 'text' => 'бот пишет',
+    'chat' => ['id' => -100777, 'type' => 'supergroup'], 'from' => ['id' => 42, 'is_bot' => true],
+]], [], ['x-telegram-bot-api-secret-token' => 'smoke-secret']));
+check('сообщения ботов не считаются', $seenGroup === null);
+check('без секрета вебхук закрыт', $kernel->handle(App\Request::make('POST', '/api/telegram/webhook', ['message' => []]))->status === 403);
+
+echo "\nВозвращение объявляется скваду\n";
+$before = count($sentToGroups);
+$kernel->db()->run('DELETE FROM checkin_days WHERE user_id = ? AND date > ?', [(int) $membersA[5], $day(4)]);
+call($kernel, 'GET', '/api/squad?date=' . $day(16), [], $hOf($membersA[0]));
+check('ушедший в восстановление отмечен', $st($sqA, (int) $membersA[5]) === 'recovery');
+$ins((int) $membersA[5], 17, 1);
+call($kernel, 'GET', '/api/squad?date=' . $day(17), [], $hOf($membersA[0]));
+$lastMsg = (string) (end($sentToGroups)['text'] ?? '');
+check('сквад узнаёт о возвращении — с теплом, без разбора', count($sentToGroups) > $before && str_contains($lastMsg, 'снова с нами'), $lastMsg);
+
 echo "\nПереводы\n";
 check('русские строки загружены', $kernel->i18n->t('identity.phone_taken') !== 'identity.phone_taken');
 check('узбекские строки загружены', $kernel->i18n->t('identity.phone_taken', [], 'uz') !== 'identity.phone_taken');
@@ -529,10 +965,12 @@ file_put_contents(
 );
 
 $code2 = <<<'PHP'
+// База задаётся до загрузки ядра: ядро само применяет миграции при
+// старте и сразу открывает соединение — менять путь потом поздно.
+$db = dirname(__DIR__) . '/storage/db/nodeps.sqlite';
+foreach (['', '-wal', '-shm'] as $s) { @unlink($db . $s); }
+putenv('DATABASE_PATH=' . $db);
 $k = require dirname(__DIR__) . '/app/bootstrap.php';
-$k->config->set('db.path', dirname(__DIR__) . '/storage/db/nodeps.sqlite');
-foreach (['', '-wal', '-shm'] as $s) { @unlink($k->config->get('db.path') . $s); }
-(new App\Migrator($k))->migrate();
 
 $reg = $k->handle(App\Request::make('POST', '/api/auth/register',
     ['phone' => '900001122', 'password' => 'parol12345']))->decoded();
@@ -570,6 +1008,53 @@ if (is_array($off2)) {
     check('норма недели берётся по умолчанию', ($off2['norm_days'] ?? 0) === 4);
     check('чек-ин записывается без плана и очков', ($off2['rec_status'] ?? 0) === 200 && ($off2['done_days'] ?? 0) === 1);
     check('маршрут очков исчез вместе с модулем', ($off2['progress'] ?? 0) === 404);
+}
+
+echo "\nСквады живут без чек-ина, онбординга, очков и Telegram\n";
+// Третий сценарий отключения: остаются только вход и сквады. Модуль не
+// должен падать, если некому ответить на его вопросы-события.
+copy($root . '/modules.php', $backup);
+file_put_contents($root . '/modules.php', "<?php\nreturn ['health','identity','web','squad'];\n");
+
+$code3 = <<<'PHP'
+// База задаётся до загрузки ядра: ядро само применяет миграции при
+// старте и сразу открывает соединение — менять путь потом поздно.
+$db = dirname(__DIR__) . '/storage/db/nosquaddeps.sqlite';
+foreach (['', '-wal', '-shm'] as $s) { @unlink($db . $s); }
+putenv('DATABASE_PATH=' . $db);
+$k = require dirname(__DIR__) . '/app/bootstrap.php';
+
+$admin = $k->handle(App\Request::make('POST', '/api/auth/register', ['phone' => '900009900', 'password' => 'parol12345']))->decoded();
+$user  = $k->handle(App\Request::make('POST', '/api/auth/register', ['phone' => '900009901', 'password' => 'parol12345']))->decoded();
+$ha = ['x-session-token' => (string) ($admin['token'] ?? '')];
+$hu = ['x-session-token' => (string) ($user['token'] ?? '')];
+
+$view  = $k->handle(App\Request::make('GET', '/api/squad', [], [], $hu));
+$wave  = $k->handle(App\Request::make('POST', '/api/admin/squad/waves', ['start_date' => gmdate('Y-m-d')], [], $ha));
+$wid   = (int) ($wave->decoded()['data']['id'] ?? 0);
+$match = $k->handle(App\Request::make('POST', '/api/admin/squad/waves/' . $wid . '/match', [], [], $ha));
+$act   = $k->handle(App\Request::make('GET', '/api/admin/squad/active', [], [], $ha));
+
+echo json_encode([
+    'view'   => $view->status, 'view_status' => $view->decoded()['status'] ?? null,
+    'wave'   => $wave->status, 'match' => $match->status, 'active' => $act->status,
+    'errors' => count($k->events->errors()),
+], JSON_UNESCAPED_UNICODE);
+PHP;
+file_put_contents($root . '/tools/_off3.php', "<?php\n" . $code3 . "\n");
+$out3 = shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($root . '/tools/_off3.php') . ' 2>&1');
+@unlink($root . '/tools/_off3.php');
+@unlink($root . '/storage/db/nosquaddeps.sqlite');
+copy($backup, $root . '/modules.php');
+@unlink($backup);
+
+$off3 = json_decode((string) $out3, true);
+check('приложение поднимается со сквадами без соседей', is_array($off3), trim((string) $out3));
+if (is_array($off3)) {
+    check('экран сквада отвечает «пока нет»', ($off3['view'] ?? 0) === 200 && ($off3['view_status'] ?? '') === 'none');
+    check('волна создаётся и подбор проходит на пустом пуле', ($off3['wave'] ?? 0) === 200 && ($off3['match'] ?? 0) === 200);
+    check('список сквадов отвечает, а не падает', ($off3['active'] ?? 0) === 200);
+    check('ни один слушатель не упал', ($off3['errors'] ?? 1) === 0);
 }
 
 echo "\n" . str_repeat('-', 46) . "\n";

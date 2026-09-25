@@ -67,6 +67,15 @@ final class Module extends BaseModule
             return $p;
         }, 'gamification');
 
+        // Полный срок лидера сквада. Отказ и бездействие награды не дают.
+        $kernel->events->on('squad.leader_term_completed', static function (array $p) use ($ledger): array {
+            $userId = (int) ($p['user_id'] ?? 0);
+            if ($userId > 0) {
+                $ledger()->give($userId, 'leader_term', 'squad' . (int) ($p['squad_id'] ?? 0) . ':' . (string) ($p['from'] ?? ''));
+            }
+            return $p;
+        }, 'gamification');
+
         $kernel->events->on('onboarding.completed', static function (array $p) use ($ledger): array {
             $userId = (int) ($p['user_id'] ?? 0);
             if ($userId > 0) {

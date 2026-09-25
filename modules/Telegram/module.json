@@ -4,8 +4,18 @@
   "version": "1.0.0",
   "description": "Вход через Telegram Mini App по подписи initData, привязка аккаунта, доставка сообщений и кодов через бота.",
   "table_prefix": "telegram_",
-  "requires": ["identity"],
+  "requires": [
+    "identity"
+  ],
   "provides": [],
-  "emits": [],
-  "listens": ["notify.send", "notify.code", "notify.channels"]
+  "emits": [
+    "telegram.group_message"
+  ],
+  "listens": [
+    "notify.channels",
+    "notify.code",
+    "notify.send",
+    "telegram.group_send",
+    "telegram.invite_link"
+  ]
 }

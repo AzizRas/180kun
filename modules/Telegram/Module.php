@@ -60,6 +60,24 @@ final class Module extends BaseModule
             return $p;
         }, 'telegram');
 
+        // Публикация в группу по просьбе другого модуля (сквады: карточки,
+        // новички, возвращения). Без токена бота просто ничего не уходит.
+        $kernel->events->on('telegram.group_send', static function (array $p) use ($kernel): array {
+            $chatId = (string) ($p['chat_id'] ?? '');
+            if ($chatId !== '' && !empty($p['text']) && empty($p['sent'])) {
+                $p['sent'] = $kernel->container->get(BotApi::class)->sendMessage($chatId, (string) $p['text']);
+            }
+            return $p;
+        }, 'telegram');
+
+        $kernel->events->on('telegram.invite_link', static function (array $p) use ($kernel): array {
+            $chatId = (string) ($p['chat_id'] ?? '');
+            if ($chatId !== '' && empty($p['link'])) {
+                $p['link'] = $kernel->container->get(BotApi::class)->createChatInviteLink($chatId);
+            }
+            return $p;
+        }, 'telegram');
+
         $kernel->events->on('notify.code', static function (array $p) use ($kernel): array {
             if (!empty($p['delivered'])) {
                 return $p;

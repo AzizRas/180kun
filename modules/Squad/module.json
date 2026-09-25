@@ -1,0 +1,18 @@
+{
+  "name": "squad",
+  "title": "Сквады",
+  "version": "1.0.0",
+  "description": "Сборка сквадов по правилам Р-06 и формуле squad_cost, волны с синхронным стартом (Р-07), утверждение составов модератором, командный счёт по слабейшему звену (Р-08), ротация лидера, жизненный цикл: пауза, восстановление, замена, роспуск. Чат — группа в Telegram.",
+  "table_prefix": "squad_",
+  "requires": ["identity"],
+  "provides": [],
+  "emits": [
+    "squad.pool_joined", "squad.proposed", "squad.approved", "squad.started",
+    "squad.member_status", "squad.member_added", "squad.member_left", "squad.disbanded",
+    "squad.leader_changed", "squad.leader_term_completed", "squad.week_scored", "squad.help_requested",
+    "season.scheduled",
+    "squad.profile_lookup", "squad.activity", "squad.member_weeks",
+    "telegram.group_send", "telegram.invite_link"
+  ],
+  "listens": ["onboarding.completed", "user.returned", "telegram.group_message", "people.related"]
+}
