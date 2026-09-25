@@ -20,7 +20,9 @@
     today: null,
     plan: null,
     checkin: null,
-    progress: null
+    progress: null,
+    squad: null,       // мой сквад или место в очереди
+    leader: null       // панель лидера
   };
 
   // ---------- вспомогательное ----------
@@ -387,6 +389,11 @@
       }));
     }
 
+    // Модератор не обязан сам проходить сезон, чтобы собирать сквады.
+    if (state.qIndex === 0 && isModerator()) {
+      blocks.push(el('button', { class: 'btn btn-ghost', text: t('squad.admin.title'), onclick: openAdmin }));
+    }
+
     return el('div', { class: 'stack' }, blocks);
   }
 
@@ -615,6 +622,10 @@
       blocks.push(el('div', { class: 'card' }, [el('h2', { text: t('plan.finished') })]));
     }
 
+    // Сквад — эмоциональный якорь продукта, поэтому сразу под действием дня
+    var sqCard = squadCard(quiet);
+    if (sqCard) blocks.push(sqCard);
+
     // Неделя
     if (c.week) {
       var left = Math.max(0, c.week.norm_days - c.week.done_days);
@@ -665,6 +676,7 @@
     }
 
     if (state.user && state.user.needs_phone) blocks.push(note('info', t('ui.attach_phone')));
+    if (isModerator()) blocks.push(el('button', { class: 'btn btn-ghost', text: t('squad.admin.title'), onclick: openAdmin }));
 
     blocks.push(el('div', { class: 'spacer' }));
     blocks.push(el('button', { class: 'btn btn-quiet', text: t('ui.logout'), onclick: logout }));
@@ -871,6 +883,403 @@
     return el('div', { class: 'row' }, [el('span', { text: label }), el('span', { text: String(value) })]);
   }
 
+  // ---------- сквад ----------
+
+  function fmtDate(iso) {
+    if (!iso) return '';
+    var p = String(iso).slice(0, 10).split('-');
+    return p.length === 3 ? p[2] + '.' + p[1] : iso;
+  }
+
+  function openChat(link) {
+    if (!link) return;
+    if (TG && TG.openTelegramLink && link.indexOf('https://t.me/') === 0) TG.openTelegramLink(link);
+    else window.open(link, '_blank', 'noopener');
+  }
+
+  function copyText(text, msgBox) {
+    function done() {
+      msgBox.textContent = '';
+      msgBox.appendChild(note('ok', t('squad.leader.copied')));
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { window.prompt('', text); });
+    } else {
+      window.prompt('', text);
+    }
+  }
+
+  /** Статусы — без осуждения: «на паузе», а не «пропустил». Очков других людей не показываем. */
+  function memberLine(m) {
+    var tags = [];
+    if (m.me) tags.push(t('squad.me'));
+    if (m.leader) tags.push(t('squad.leader'));
+    if (m.anchor) tags.push(t('squad.anchor'));
+    return el('div', { class: 'row member' }, [
+      el('span', {}, [m.name, tags.length ? el('small', { class: 'muted', text: ' · ' + tags.join(' · ') }) : null]),
+      el('span', { class: 'mstatus ms-' + m.status, text: t('squad.status.' + m.status) })
+    ]);
+  }
+
+  function squadCard(quiet) {
+    var s = state.squad;
+    if (!s || s.status === 'none') return null;
+
+    if (s.status === 'waiting') {
+      return el('div', { class: 'card' }, [
+        el('div', { class: 'eyebrow', text: t('squad.title') }),
+        el('h2', { text: t('squad.waiting') }),
+        s.wave
+          ? el('div', { class: 'rows' }, [row(t('squad.wave_starts', { date: fmtDate(s.wave.start_date) }), t('squad.days_left', { n: s.wave.days_left }))])
+          : el('p', { class: 'muted', text: t('squad.no_wave') }),
+        el('p', { class: 'muted', text: t('squad.waiting_hint') }),
+        !s.prefs_set
+          ? el('button', { class: 'btn btn-ghost', text: t('squad.prefs.title'), onclick: function () { go(screenSquadPrefs); } })
+          : null
+      ]);
+    }
+
+    var sq = s.squad;
+    return el('div', { class: 'card' }, [
+      el('div', { class: 'eyebrow', text: sq.name + ' · ' + t('squad.day', { n: sq.day }) }),
+      el('div', { class: 'rows' }, sq.members.map(memberLine)),
+      // Счёт — соревновательный элемент, в восстановлении его не показываем.
+      s.week && !quiet ? el('div', { class: 'rows', style: 'margin-top:8px' }, [
+        row(t('squad.week_score') + ' · ' + t('squad.week_so_far'), String(s.week.score))
+      ]) : null,
+      s.i_am_leader ? note('info', t('squad.leader_card', { date: fmtDate(sq.leader_until) })) : null,
+      el('div', { class: 'stack', style: 'margin-top:12px' }, [
+        sq.chat_link
+          ? el('button', { class: 'btn btn-tg', text: t('squad.open_chat'), onclick: function () { openChat(sq.chat_link); } })
+          : el('p', { class: 'muted', style: 'margin:0', text: t('squad.no_chat') }),
+        s.i_am_leader ? el('button', { class: 'btn btn-ghost', text: t('squad.leader_open'), onclick: openLeader }) : null,
+        el('button', { class: 'btn btn-quiet', text: t('squad.title') + ' →', onclick: function () { go(screenSquad); } })
+      ])
+    ]);
+  }
+
+  function screenSquad() {
+    var s = state.squad || {};
+    var sq = s.squad;
+    if (!sq) return screenHome();
+    var w = s.week;
+
+    return el('div', { class: 'stack' }, [
+      header(sq.name),
+      el('div', { class: 'card' }, [
+        el('div', { class: 'eyebrow', text: t('squad.members') + ' · ' + t('squad.day', { n: sq.day }) }),
+        el('div', { class: 'rows' }, sq.members.map(memberLine))
+      ]),
+      w ? el('div', { class: 'card' }, [
+        el('div', { class: 'eyebrow', text: t('squad.week') + ' · ' + t('squad.week_so_far') }),
+        el('div', { class: 'daybar' }, [el('div', { class: 'n', text: String(w.score) })]),
+        el('div', { class: 'rows' }, [
+          row(t('squad.week_median'), w.median + '%'),
+          row(t('squad.week_min'), w.min + '%')
+        ]),
+        el('p', { class: 'muted', style: 'margin:10px 0 0', text: t('squad.week_hint') })
+      ]) : null,
+      (s.history || []).length ? el('div', { class: 'card' }, [
+        el('div', { class: 'eyebrow', text: t('squad.history') }),
+        el('div', { class: 'rows' }, s.history.slice().reverse().map(function (h) {
+          return row('#' + h.week_no + ' · ' + fmtDate(h.week_start), String(h.score));
+        }))
+      ]) : null,
+      sq.chat_link ? el('button', { class: 'btn btn-tg', text: t('squad.open_chat'), onclick: function () { openChat(sq.chat_link); } }) : note('info', t('squad.no_chat')),
+      s.i_am_leader ? el('button', { class: 'btn btn-ghost', text: t('squad.leader_open'), onclick: openLeader }) : null,
+      el('div', { class: 'spacer' }),
+      el('button', { class: 'btn btn-quiet', text: t('ui.back'), onclick: function () { go(screenHome); } })
+    ].filter(Boolean));
+  }
+
+  /** Два вопроса для подбора. Смешанный сквад — только с явного согласия всех. */
+  function screenSquadPrefs() {
+    var s = state.squad || {};
+    var picked = { mixed_ok: !!s.mixed_ok, commit: s.commit || 2 };
+    var msg = el('div', {});
+
+    function group(values, current, label, key) {
+      var box = el('div', { class: 'opts opts-' + values.length }, []);
+      values.forEach(function (v) {
+        var b = choice(label(v), current === v, function () {
+          picked[key] = v;
+          Array.prototype.forEach.call(box.children, function (x) { x.classList.remove('opt-on'); });
+          b.classList.add('opt-on');
+        });
+        box.appendChild(b);
+      });
+      return box;
+    }
+
+    var submit = actionButton(t('squad.prefs.save'), 'btn-primary');
+    return el('div', { class: 'stack' }, [
+      header(t('squad.prefs.title')),
+      el('form', {
+        class: 'stack',
+        onsubmit: function (e) {
+          e.preventDefault();
+          busy(submit, true);
+          api('POST', '/api/squad/prefs', picked).then(function (r) {
+            busy(submit, false);
+            if (r.ok) return loadHome();
+            msg.textContent = '';
+            msg.appendChild(note('error', r.message || t('ui.network_error')));
+          });
+        }
+      }, [
+        el('div', { class: 'eyebrow', text: t('squad.prefs.mixed') }),
+        group([false, true], picked.mixed_ok, function (v) { return t('squad.prefs.mixed.' + (v ? 'yes' : 'no')); }, 'mixed_ok'),
+        el('p', { class: 'muted', style: 'margin:0', text: t('squad.prefs.mixed_hint') }),
+        el('div', { class: 'eyebrow', text: t('squad.prefs.commit') }),
+        group([1, 2, 3], picked.commit, function (v) { return t('squad.prefs.commit.' + v); }, 'commit'),
+        msg,
+        submit
+      ]),
+      el('div', { class: 'spacer' }),
+      el('button', { class: 'btn btn-quiet', text: t('ui.back'), onclick: function () { go(screenHome); } })
+    ]);
+  }
+
+  // ---------- панель лидера ----------
+
+  function openLeader() {
+    render(el('div', { class: 'stack' }, [header(), note('info', t('ui.loading'))]));
+    api('GET', '/api/squad/leader').then(function (r) {
+      if (!r.ok) { return loadHome(); }
+      state.leader = r.data;
+      go(screenLeader);
+    });
+  }
+
+  /** Три дела в неделю, черновики готовы. Лидер нажимает «скопировать» — человеческое остаётся за ним. */
+  function screenLeader() {
+    var L = state.leader || {};
+    var msg = el('div', {});
+
+    function draftBlock(title, draft, extra) {
+      return el('div', { class: 'card' + (extra && extra.accent ? ' card-accent' : '') }, [
+        el('div', { class: 'eyebrow', text: title }),
+        el('p', { style: 'margin:0 0 12px', text: draft }),
+        el('div', { class: 'stack' }, [
+          el('button', { class: 'btn btn-ghost', text: t('squad.leader.copy'), onclick: function () { copyText(draft, msg); } }),
+          extra && extra.button ? extra.button : null
+        ])
+      ]);
+    }
+
+    var blocks = [header(t('squad.leader.title')), el('p', { class: 'muted', text: t('squad.leader.intro') }), msg];
+
+    var today = (L.duties || []).filter(function (d) { return d.today; })[0];
+    if (today) {
+      blocks.push(draftBlock(t('squad.leader.today') + ' · ' + today.title, today.draft, {
+        accent: true,
+        button: el('button', {
+          class: 'btn btn-primary', text: t('squad.leader.done'),
+          onclick: function () { api('POST', '/api/squad/leader/done').then(function () { loadHome(); }); }
+        })
+      }));
+    }
+
+    blocks.push(el('div', { class: 'eyebrow', text: t('squad.leader.paused') }));
+    if (!(L.paused || []).length) {
+      blocks.push(note('ok', t('squad.leader.nobody')));
+    }
+    (L.paused || []).forEach(function (p) {
+      blocks.push(draftBlock(p.name + ' · ' + t('squad.status.' + p.status), p.draft, {
+        button: el('button', {
+          class: 'btn btn-quiet', text: t('squad.leader.help'),
+          onclick: function () {
+            api('POST', '/api/squad/help', { user_id: p.user_id }).then(function (r) {
+              msg.textContent = '';
+              msg.appendChild(note(r.ok ? 'ok' : 'error', r.ok ? t('squad.leader.help_sent') : (r.message || t('ui.network_error'))));
+            });
+          }
+        })
+      }));
+    });
+
+    blocks.push(el('div', { class: 'card' }, [
+      el('div', { class: 'rows' }, (L.duties || []).map(function (d) {
+        return el('div', { class: 'row duty' + (d.today ? ' row-on' : '') }, [el('span', { text: d.title })]);
+      }))
+    ]));
+    blocks.push(note('info', t('squad.leader.never')));
+    if (L.chat_link) {
+      blocks.push(el('button', { class: 'btn btn-tg', text: t('squad.open_chat'), onclick: function () { openChat(L.chat_link); } }));
+    }
+    blocks.push(el('div', { class: 'spacer' }));
+    blocks.push(el('button', {
+      class: 'btn btn-quiet', text: t('squad.leader.decline'),
+      onclick: function () {
+        api('POST', '/api/squad/leader/decline').then(function (r) {
+          if (r.ok) {
+            render(el('div', { class: 'stack' }, [
+              header(), note('ok', t('squad.leader.declined')),
+              actionButton(t('ui.next'), 'btn-primary', function () { loadHome(); })
+            ]));
+          }
+        });
+      }
+    }));
+    blocks.push(el('button', { class: 'btn btn-quiet', text: t('ui.back'), onclick: function () { loadHome(); } }));
+    return el('div', { class: 'stack' }, blocks);
+  }
+
+  // ---------- модератор: волны и составы ----------
+
+  function isModerator() {
+    return !!state.user && (state.user.role === 'admin' || state.user.role === 'moderator');
+  }
+
+  function adminLoad(path, key, screen) {
+    render(el('div', { class: 'stack' }, [header(), note('info', t('ui.loading'))]));
+    return api('GET', path).then(function (r) {
+      if (!r.ok) {
+        render(el('div', { class: 'stack' }, [header(), note('error', r.message || r.error || t('ui.network_error')),
+          el('button', { class: 'btn btn-quiet', text: t('ui.back'), onclick: function () { loadHome(); } })]));
+        return;
+      }
+      state[key] = r;
+      go(screen);
+    });
+  }
+
+  function openAdmin() { adminLoad('/api/admin/squad/waves', 'adminWaves', screenAdminWaves); }
+  function openAdminWave(id) { state.adminWaveId = id; adminLoad('/api/admin/squad/waves/' + id, 'adminWave', screenAdminWave); }
+  function openAdminActive() { adminLoad('/api/admin/squad/active', 'adminActive', screenAdminActive); }
+
+  function adminPost(path, body, then) {
+    return api('POST', path, body || {}).then(function (r) {
+      if (!r.ok) {
+        var text = r.message || r.error || t('ui.network_error');
+        if (r.rules && r.rules.length) text += ' — ' + r.rules.map(function (x) { return x.title; }).join('; ');
+        window.alert(text);
+      }
+      if (then) then(r);
+      return r;
+    });
+  }
+
+  function screenAdminWaves() {
+    var d = state.adminWaves || {};
+    var date = field(t('squad.admin.start_date'), { type: 'date', required: true });
+    var title = field(t('squad.admin.wave_title'), { type: 'text', maxlength: 80 });
+    var submit = actionButton(t('squad.admin.create'), 'btn-primary');
+    var msg = el('div', {});
+
+    return el('div', { class: 'stack' }, [
+      header(t('squad.admin.title')),
+      d.unassigned ? note('info', t('squad.admin.unassigned', { n: d.unassigned })) : null,
+      el('form', {
+        class: 'card stack',
+        onsubmit: function (e) {
+          e.preventDefault();
+          busy(submit, true);
+          api('POST', '/api/admin/squad/waves', { start_date: date.input.value, title: title.input.value }).then(function (r) {
+            busy(submit, false);
+            if (r.ok) return openAdmin();
+            msg.textContent = '';
+            msg.appendChild(note('error', r.message || t('ui.network_error')));
+          });
+        }
+      }, [el('div', { class: 'eyebrow', text: t('squad.admin.new_wave') }), date.wrap, title.wrap, msg, submit]),
+      el('div', { class: 'eyebrow', text: t('squad.admin.waves') }),
+      el('div', { class: 'card' }, [el('div', { class: 'rows' }, (d.waves || []).map(function (w) {
+        return el('div', { class: 'row' }, [
+          el('span', {}, [
+            (w.title || '#' + w.id) + ' · ' + fmtDate(w.start_date),
+            el('small', { class: 'muted', text: ' · ' + t('squad.admin.wave.' + w.status) + ' · ' + w.pool + ' ' + t('squad.admin.pool') + ' · ' + w.squads + ' ' + t('squad.admin.squads') })
+          ]),
+          el('button', { class: 'link', text: t('squad.admin.open'), onclick: function () { openAdminWave(w.id); } })
+        ]);
+      }))]),
+      el('button', { class: 'btn btn-ghost', text: t('squad.admin.active'), onclick: openAdminActive }),
+      el('div', { class: 'spacer' }),
+      el('button', { class: 'btn btn-quiet', text: t('ui.back'), onclick: function () { loadHome(); } })
+    ].filter(Boolean));
+  }
+
+  function adminSquadCard(sq, targets, reload) {
+    var head = '#' + sq.id + ' · ' + sq.lang.toUpperCase() + ' · ' + t('squad.sex.' + sq.sex) + ' · ' + sq.base_tier + ' · ' + t('squad.admin.status.' + sq.status);
+    var actions = [];
+    if (sq.status === 'proposed') {
+      actions.push(el('button', { class: 'btn btn-primary', text: t('squad.admin.approve'), onclick: function () { adminPost('/api/admin/squad/' + sq.id + '/approve', {}, reload); } }));
+    }
+    if (sq.status === 'proposed' || sq.status === 'approved') {
+      actions.push(el('button', { class: 'btn btn-quiet', text: t('squad.admin.reject'), onclick: function () { adminPost('/api/admin/squad/' + sq.id + '/reject', {}, reload); } }));
+    }
+    if (sq.status === 'active' || sq.status === 'approved') {
+      var link = field(t('squad.admin.link'), { type: 'url', value: sq.invite_link || '', placeholder: 'https://t.me/+…' });
+      actions.push(link.wrap);
+      actions.push(el('button', { class: 'btn btn-ghost', text: t('squad.admin.save_link'), onclick: function () { adminPost('/api/admin/squad/' + sq.id + '/link', { invite_link: link.input.value }, reload); } }));
+    }
+    if (sq.status === 'active') {
+      actions.push(el('button', { class: 'btn btn-quiet', text: t('squad.admin.disband'), onclick: function () {
+        if (window.confirm(t('squad.admin.disband') + '?')) adminPost('/api/admin/squad/' + sq.id + '/disband', {}, reload);
+      } }));
+    }
+
+    return el('div', { class: 'card' }, [
+      el('div', { class: 'eyebrow', text: head }),
+      el('div', { class: 'chips' }, (sq.flags || []).map(function (f) { return el('span', { class: 'chip', text: t('squad.flag.' + f) }); })),
+      (sq.rules || []).length ? note('error', sq.rules.map(function (r) { return t('squad.rule.' + r); }).join('; ')) : null,
+      el('div', { class: 'rows' }, [
+        row(t('squad.admin.cost'), String(sq.cost)),
+        row(t('squad.admin.code', { code: sq.code }), sq.chat_bound ? '✓' : '—')
+      ]),
+      el('div', { class: 'rows' }, sq.members.map(function (m) {
+        return el('div', { class: 'row member' }, [
+          el('span', {}, [m.name + (m.role === 'anchor' ? ' ★' : '') + (m.needs_help ? ' ⚑' : ''),
+            el('small', { class: 'muted', text: ' · ' + m.tier + ' · ' + m.age + ' · ' + t('squad.window.' + m.window) + ' · ' + m.time + "'" + ' · c' + m.commit })]),
+          el('span', { class: 'mstatus ms-' + m.status, text: t('squad.status.' + m.status) })
+        ]);
+      })),
+      el('div', { class: 'stack', style: 'margin-top:12px' }, actions)
+    ].filter(Boolean));
+  }
+
+  function screenAdminWave() {
+    var d = state.adminWave || {};
+    var w = d.wave || {};
+    var reload = function () { openAdminWave(w.id); };
+    var open = (d.squads || []).filter(function (s) { return s.status === 'proposed' || s.status === 'approved'; });
+
+    var blocks = [
+      header((w.title || '#' + w.id) + ' · ' + fmtDate(w.start_date)),
+      el('div', { class: 'rows' }, [row(t('squad.admin.wave.' + w.status), (d.waiting || []).length + ' ' + t('squad.admin.pool'))])
+    ];
+    if (w.status !== 'started') {
+      blocks.push(el('button', { class: 'btn btn-primary', text: t('squad.admin.match'), onclick: function () { adminPost('/api/admin/squad/waves/' + w.id + '/match', {}, reload); } }));
+      blocks.push(el('p', { class: 'muted', style: 'margin:0', text: t('squad.admin.rematch_note') }));
+      blocks.push(el('button', { class: 'btn btn-ghost', text: t('squad.admin.start'), onclick: function () { adminPost('/api/admin/squad/waves/' + w.id + '/start', {}, reload); } }));
+    }
+    (d.squads || []).forEach(function (sq) { blocks.push(adminSquadCard(sq, open, reload)); });
+
+    if ((d.waiting || []).length) {
+      blocks.push(el('div', { class: 'eyebrow', text: t('squad.admin.left') }));
+      blocks.push(el('div', { class: 'card' }, [el('div', { class: 'rows' }, d.waiting.map(function (c) {
+        var select = el('select', { class: 'mini' }, open.map(function (s) { return el('option', { value: s.id, text: '#' + s.id }); }));
+        return el('div', { class: 'row' }, [
+          el('span', {}, [c.name, el('small', { class: 'muted', text: ' · ' + c.lang + ' · ' + t('squad.sex.' + c.sex) + ' · ' + c.tier + ' · ' + c.age + ' · ' + t('squad.window.' + c.window) })]),
+          open.length ? el('span', {}, [select, el('button', { class: 'link', text: t('squad.admin.move_here'), onclick: function () {
+            adminPost('/api/admin/squad/move', { user_id: c.user_id, squad_id: parseInt(select.value, 10) }, reload);
+          } })]) : null
+        ]);
+      }))]));
+    }
+
+    blocks.push(el('div', { class: 'spacer' }));
+    blocks.push(el('button', { class: 'btn btn-quiet', text: t('ui.back'), onclick: openAdmin }));
+    return el('div', { class: 'stack' }, blocks);
+  }
+
+  function screenAdminActive() {
+    var d = state.adminActive || {};
+    return el('div', { class: 'stack' }, [header(t('squad.admin.active'))]
+      .concat((d.squads || []).map(function (sq) { return adminSquadCard(sq, [], openAdminActive); }))
+      .concat([el('div', { class: 'spacer' }), el('button', { class: 'btn btn-quiet', text: t('ui.back'), onclick: openAdmin })]));
+  }
+
   // ---------- переходы ----------
 
   function go(screen) {
@@ -919,7 +1328,8 @@
       return Promise.all([
         api('GET', '/api/checkin/today'),
         api('GET', '/api/plan'),
-        api('GET', '/api/me/progress')
+        api('GET', '/api/me/progress'),
+        api('GET', '/api/squad')
       ]).then(function (p) {
         // Чек-ин отдаёт и действие дня, и неделю — отдельный запрос
         // за планом на сегодня не нужен.
@@ -927,6 +1337,8 @@
         state.today    = state.checkin ? state.checkin.plan : null;
         state.plan     = (p[1] && p[1].plan) || null;
         state.progress = (p[2] && p[2].progress) || null;
+        // Модуль сквадов выключен — маршрута нет (404), карточки просто не будет.
+        state.squad    = p[3] && p[3].ok ? p[3] : null;
         go(screenHome);
       });
     });

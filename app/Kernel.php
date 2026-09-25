@@ -119,8 +119,18 @@ final class Kernel
     }
 
     /**
-     * Секретный ключ приложения: из config.php, иначе создаётся один раз
-     * в storage/secret.key. Используется для подписи сессий и талонов.
+     * Папка постоянных данных (база, ключ, токены). На обычном хостинге —
+     * storage/, в контейнере — смонтированный том. См. config.php → data_dir.
+     */
+    public function dataDir(): string
+    {
+        $dir = (string) $this->config->get('app.data_dir', '');
+        return $dir !== '' ? $dir : $this->root . '/storage';
+    }
+
+    /**
+     * Секретный ключ приложения: из конфига, иначе создаётся один раз
+     * в DATA_DIR/secret.key. Используется для подписи сессий и талонов.
      */
     public function secret(): string
     {
@@ -134,7 +144,7 @@ final class Kernel
             return $cached = $fromConfig;
         }
 
-        $file = $this->root . '/storage/secret.key';
+        $file = $this->dataDir() . '/secret.key';
         if (is_file($file)) {
             return $cached = (string) file_get_contents($file);
         }
@@ -162,5 +172,11 @@ final class Kernel
             $context ? json_encode($context, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : ''
         );
         @file_put_contents($dir . '/app-' . gmdate('Y-m-d') . '.log', $line, FILE_APPEND | LOCK_EX);
+
+        // В контейнере файлы логов не видны и стираются при деплое, а поток
+        // ошибок попадает в журнал платформы (Railway → Deployments → Logs).
+        if (PHP_SAPI !== 'cli' && in_array($level, ['error', 'warning'], true)) {
+            error_log('LEVEL180 ' . trim($line));
+        }
     }
 }
