@@ -15,20 +15,45 @@
 3. Откройте `config.php` и поменяйте:
    - `app.url` — адрес сайта;
    - `app.debug` — поставьте `false` перед запуском;
-   - `admin.password` — пароль админки;
-   - `admin.email` — этот аккаунт станет админом.
+   - `admin.email` — первый зарегистрированный станет админом.
 4. Откройте `https://вашсайт/health` — все строки должны быть зелёными.
 5. Зарегистрируйтесь на `https://вашсайт/`.
 
 Требования к хостингу: PHP 8.0+, расширения `pdo_sqlite` и `mbstring`,
 `curl` — только если подключаете ИИ. MySQL, Node, Docker, Composer не нужны.
 
+## Railway (GitHub → Railway)
+
+Railway сам узнаёт PHP-проект и берёт наш `Caddyfile`: наружу отдаются
+только `assets/` и сама страница приложения. Остальное — `STATE.md`,
+`storage/`, `tools/`, `config.php` — снаружи не видно.
+
+1. **Volume.** Сервис → Settings → Volumes → Add Volume, путь `/data`.
+   Без него база и секретный ключ стираются при каждом деплое. Путь тома
+   Railway передаёт приложению сам, настраивать ничего не нужно.
+2. **Переменные** (сервис → Variables), все необязательные:
+
+   | Переменная | Зачем |
+   |---|---|
+   | `APP_URL` | адрес сайта, например `https://180kun-production.up.railway.app` |
+   | `HEALTH_KEY` | любая длинная строка: открывает `/health?key=…` без входа |
+   | `ADMIN_EMAIL` | первый зарегистрированный станет админом |
+   | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_NAME`, `TELEGRAM_WEBHOOK_SECRET` | бот и Mini App |
+   | `SMS_PROVIDER=eskiz`, `SMS_LOGIN`, `SMS_PASSWORD` | SMS-коды |
+   | `APP_DEBUG=true` | только на время поиска ошибки |
+
+3. Миграции применяются сами при первом запросе после деплоя.
+4. Проверка: `/health` — «Работает». Подробности — войти админом или
+   `/health?key=…`.
+
+Все настройки читаются из переменных окружения, поэтому `config.php` на
+Railway править не нужно и секреты не попадают в GitHub.
+
 ## Локальный запуск
 
 ```bash
-php tools/migrate.php
 php -S localhost:8000 index.php
-# затем http://localhost:8000/health
+# затем http://localhost:8000/health — миграции применятся сами
 ```
 
 ## Управление составом продукта
@@ -48,7 +73,8 @@ php tools/make-module.php Squad  скелет нового модуля
 
 ## Резервная копия
 
-Вся база — один файл `storage/db/level180.sqlite`. Скачивайте раз в неделю.
+Вся база — один файл `level180.sqlite` в папке данных (`storage/db/` на
+хостинге, том `/data/db/` на Railway). Копируйте раз в неделю.
 
 ## Документы
 

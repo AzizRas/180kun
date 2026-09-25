@@ -6,11 +6,11 @@ declare(strict_types=1);
  * Всё — и страницы, и API — проходит через маршрутизатор ядра.
  */
 
-// Встроенный сервер PHP (php -S localhost:8000 index.php) сам отдаёт
-// существующие файлы, всё остальное направляет сюда.
+// Встроенный сервер PHP (php -S localhost:8000 index.php) отдаёт сам
+// только assets/ — тот же белый список, что в Caddyfile и .htaccess.
 if (PHP_SAPI === 'cli-server') {
-    $file = __DIR__ . '/' . ltrim((string) parse_url((string) $_SERVER['REQUEST_URI'], PHP_URL_PATH), '/');
-    if ($file !== __DIR__ . '/' && is_file($file) && !str_ends_with($file, '.php')) {
+    $path = (string) parse_url((string) $_SERVER['REQUEST_URI'], PHP_URL_PATH);
+    if (str_starts_with($path, '/assets/') && !str_contains($path, '..') && is_file(__DIR__ . $path)) {
         return false;
     }
 }

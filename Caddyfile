@@ -1,0 +1,48 @@
+{
+	admin off
+	persist_config off
+	auto_https off
+
+	log {
+		format json
+		output stderr
+		level INFO
+	}
+
+	frankenphp
+}
+
+# LEVEL 180 — конфигурация веб-сервера для Railway (Railpack + FrankenPHP).
+#
+# Railpack берёт этот файл вместо своего стандартного. Стандартный отдаёт
+# КАЖДЫЙ файл проекта: STATE.md, базу из storage/, секретный ключ,
+# инструменты из tools/. Здесь наоборот — белый список:
+#
+#   /assets/*   отдаются как статика (стили, скрипты, иконки, манифест)
+#   всё прочее  идёт в index.php, а маршрутизатор ядра отвечает 404 на
+#               всё, чего не знает
+#
+# Ни один другой .php-файл выполнить через веб невозможно.
+
+:{$PORT:80} {
+	root * /app
+	encode zstd br gzip
+
+	header {
+		X-Content-Type-Options "nosniff"
+		# Mini App в веб-версии Telegram открывается во фрейме — разрешаем
+		# только Telegram, а не SAMEORIGIN, иначе там будет белый экран.
+		Content-Security-Policy "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	handle /assets/* {
+		file_server
+	}
+
+	handle {
+		rewrite * /index.php?{query}
+		php
+	}
+}

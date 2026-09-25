@@ -117,12 +117,19 @@ $reply = $coach->replyToCheckin($context);   // NullCoach вернёт шабл�
 
 ## Безопасность
 
-- `config.php`, `modules.php`, `app/`, `modules/`, `tools/`, `storage/`
-  закрыты `.htaccess` на двух уровнях.
-- База лежит в `storage/db/` — вне досягаемости браузера.
+- Наружу отдаются только `assets/` и `index.php` — белым списком, а не
+  чёрным. На Railway это делает `Caddyfile` (FrankenPHP), на Apache —
+  `.htaccess`. Любой другой адрес уходит в роутер и получает 404.
+- Инструменты в `tools/` дополнительно отказываются работать не из
+  командной строки (`tools/_guard.php`) — на случай чужого веб-сервера.
+- Постоянные данные (база, ключ, токены) — в папке данных
+  `$kernel->dataDir()`: `storage/` на хостинге, том на Railway.
+- `/health` посторонним показывает только «работает / нет».
 - В базе только хеш токена сессии и хеш пароля.
 - Перебор пароля ограничен: 5 неудач с одного IP за 15 минут.
-- Заголовки `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`.
+- Заголовки `X-Content-Type-Options`, `Referrer-Policy` и
+  `frame-ancestors` c Telegram (не `SAMEORIGIN`: веб-версия Telegram
+  открывает Mini App во фрейме).
 
 ## Когда понадобится вынести модуль в сервис
 
@@ -134,5 +141,25 @@ $reply = $coach->replyToCheckin($context);   // NullCoach вернёт шабл�
 
 ## Резервная копия
 
-Вся база — один файл `storage/db/level180.sqlite`. Скачивать раз в неделю.
-Вместе с `config.php` это полный слепок системы.
+Вся база — один файл `level180.sqlite` в папке данных. Скачивать раз в
+неделю. Вместе с переменными окружения это полный слепок системы.
+
+## Сквады и соседи (срез 4)
+
+Модуль `squad` — хороший пример того, как модуль живёт, ничего не зная о
+соседях. Всё, что ему нужно, он спрашивает событиями, а отвечают те, кто
+владеет данными:
+
+| Событие | Кто спрашивает | Кто отвечает | Что если отвечающего нет |
+|---|---|---|---|
+| `squad.profile_lookup` | Squad | Onboarding | человек не попадает в пул, пока не пройдёт онбординг |
+| `squad.activity` | Squad | Checkin | статусы паузы не меняются — не знаем, кто пропал |
+| `squad.member_weeks` | Squad | Checkin | командный счёт не пишется |
+| `telegram.group_send` | Squad | Telegram | карточки не уходят, метрика первой реакции не стартует |
+| `telegram.invite_link` | Squad | Telegram | ссылку модератор вставляет руками |
+| `season.scheduled` | Squad | Planning | план не сдвигается на общий день 1 |
+
+И наоборот: `squad.leader_term_completed` слушает Gamification (+250 XP),
+`telegram.group_message` публикует Telegram, `onboarding.completed` и
+`user.returned` приходят от соседей. Тест `smoke.php` поднимает сквады
+вообще без онбординга, чек-ина, очков и Telegram — модуль отвечает, а не падает.
