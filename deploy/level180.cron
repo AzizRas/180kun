@@ -1,0 +1,10 @@
+# LEVEL 180 — такт планировщика и резервная копия.
+# Скопируйте в /etc/cron.d/level180 (владелец root, права 644).
+# Настройки (папка данных, токен бота) такт берёт из config.local.php —
+# того же файла, что и сайт.
+
+# Каждые 5 минут: напоминания о созвонах, пересчёт сквадов, чистка фото по сроку.
+0-59/5 * * * *  www-data  php /var/www/level180/tools/tick.php >> /var/log/level180-tick.log 2>&1
+
+# Каждую ночь в 03:30 по Ташкенту (22:30 UTC): копия базы и фото.
+30 22 * * *     root      DATA_DIR=/var/lib/level180 /var/www/level180/deploy/backup.sh >> /var/log/level180-backup.log 2>&1

@@ -1,0 +1,37 @@
+# LEVEL 180 — Caddy на своём сервере в Узбекистане (Caddy + PHP-FPM).
+#
+# Скопируйте в /etc/caddy/Caddyfile, замените домен и путь, затем
+#   sudo systemctl reload caddy
+# Сертификат HTTPS Caddy получит сам (Telegram Mini App без HTTPS не откроется).
+#
+# Тот же белый список, что в корневом Caddyfile для Railway: наружу отдаются
+# только assets/ и сама страница приложения. База, фото, ключ, tools/ —
+# недоступны из браузера.
+
+level180.uz {
+	root * /var/www/level180
+	encode zstd gzip
+
+	# Фото приходят строкой base64 (~1 МБ после сжатия в телефоне);
+	# запас — на случай, если телефон не смог уменьшить снимок.
+	request_body {
+		max_size 16MB
+	}
+
+	header {
+		X-Content-Type-Options "nosniff"
+		Content-Security-Policy "frame-ancestors 'self' https://web.telegram.org https://*.telegram.org"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	handle /assets/* {
+		file_server
+	}
+
+	handle {
+		rewrite * /index.php?{query}
+		php_fastcgi unix//run/php/php8.3-fpm-level180.sock
+	}
+}
