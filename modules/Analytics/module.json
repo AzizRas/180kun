@@ -1,0 +1,15 @@
+{
+  "name": "analytics",
+  "title": "Метрики",
+  "version": "1.0.0",
+  "description": "Панель метрик § 13 с целевыми значениями: Return Rate (главная), Kept Week (North Star), воронка активации, удержание D7–D180, сквады, тренер, деньги, когорты. Свой журнал событий — того, что нельзя восстановить задним числом; остальные модули докладывают свои цифры событием analytics.collect.",
+  "table_prefix": "analytics_",
+  "requires": [],
+  "provides": [],
+  "emits": ["analytics.collect"],
+  "listens": [
+    "user.registered", "onboarding.completed", "onboarding.rejected", "plan.built",
+    "checkin.recorded", "user.returned", "week.closed", "user.state_changed",
+    "billing.season_activated", "squad.started", "squad.disbanded", "coach.reply", "safety.alert"
+  ]
+}

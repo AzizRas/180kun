@@ -1,0 +1,21 @@
+<?php
+return [
+    'admin.title'     => 'Boshqaruv',
+    'admin.tab.squads'   => 'Skvadlar',
+    'admin.tab.payments' => 'To‘lovlar',
+    'admin.tab.people'   => 'Odamlar',
+    'admin.tab.metrics'  => 'Ko‘rsatkichlar',
+    'admin.tab.system'   => 'Tizim',
+    'admin.search'    => 'Ism, raqam yoki @telegram',
+    'admin.role.user'      => 'ishtirokchi',
+    'admin.role.moderator' => 'moderator',
+    'admin.role.admin'     => 'admin',
+    'admin.make'      => 'Qilish: {role}',
+    'admin.block'     => 'Bloklash',
+    'admin.unblock'   => 'Blokdan chiqarish',
+    'admin.blocked'   => 'bloklangan',
+    'admin.audit'     => 'Qarorlar jurnali',
+    'admin.migrate'   => 'Migratsiyalarni qo‘llash',
+    'admin.migrated'  => 'Qo‘llandi: {n}.',
+    'admin.health'    => 'Diagnostikani ochish',
+];

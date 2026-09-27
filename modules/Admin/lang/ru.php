@@ -1,0 +1,21 @@
+<?php
+return [
+    'admin.title'     => 'Управление',
+    'admin.tab.squads'   => 'Сквады',
+    'admin.tab.payments' => 'Оплаты',
+    'admin.tab.people'   => 'Люди',
+    'admin.tab.metrics'  => 'Метрики',
+    'admin.tab.system'   => 'Система',
+    'admin.search'    => 'Имя, номер или @telegram',
+    'admin.role.user'      => 'участник',
+    'admin.role.moderator' => 'модератор',
+    'admin.role.admin'     => 'админ',
+    'admin.make'      => 'Сделать: {role}',
+    'admin.block'     => 'Заблокировать',
+    'admin.unblock'   => 'Разблокировать',
+    'admin.blocked'   => 'заблокирован',
+    'admin.audit'     => 'Журнал решений',
+    'admin.migrate'   => 'Применить миграции',
+    'admin.migrated'  => 'Применено: {n}.',
+    'admin.health'    => 'Открыть диагностику',
+];

@@ -1,0 +1,24 @@
+{
+  "name": "calls",
+  "title": "Созвоны сквада",
+  "version": "1.0.0",
+  "description": "Лидер назначает созвон (итоги недели, поддержка, план, просто поговорить), сквад отвечает «приду / не смогу / возможно», за час — напоминание в чат и лично. Где проходит звонок, решает контракт CallProvider: по умолчанию видеочат группы сквада в Telegram, по желанию — своя комната Jitsi на узбекском сервере.",
+  "table_prefix": "calls_",
+  "requires": [
+    "identity"
+  ],
+  "provides": [
+    "CallProvider"
+  ],
+  "emits": [
+    "calls.scheduled",
+    "calls.cancelled",
+    "calls.joined"
+  ],
+  "listens": [
+    "analytics.collect",
+    "system.tick",
+    "user.erase",
+    "user.export"
+  ]
+}

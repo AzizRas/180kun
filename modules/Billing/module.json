@@ -1,0 +1,24 @@
+{
+  "name": "billing",
+  "title": "Оплата",
+  "version": "1.0.0",
+  "description": "Сезон, а не подписка (Р-20): 390 000 разом, 6 × 79 000, вдвоём 690 000, второй сезон 290 000. До эквайринга — перевод на карту и подтверждение модератором, промокоды. Реферальная программа: по 50 000 обоим, когда приглашённый дошёл до дня 30. Нулевой цикл 14 дней бесплатно.",
+  "table_prefix": "billing_",
+  "requires": [
+    "identity"
+  ],
+  "provides": [
+    "Access"
+  ],
+  "emits": [
+    "billing.season_activated",
+    "billing.payment_created",
+    "people.related",
+    "admin.action"
+  ],
+  "listens": [
+    "analytics.collect",
+    "checkin.recorded",
+    "user.registered"
+  ]
+}
