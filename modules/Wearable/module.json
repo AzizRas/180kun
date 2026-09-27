@@ -1,0 +1,20 @@
+{
+  "name": "wearable",
+  "title": "Браслет",
+  "version": "1.0.0",
+  "description": "Данные браслета и телефона: ручной ввод за 20 секунд, импорт CSV-выгрузок (Mi Fitness, Zepp, Samsung Health, Google Takeout), проверка правдоподобия, вес раз в неделю. Доверяем шагам, активным минутам, ЧСС покоя в тренде и длительности сна; калории и фазы сна не используем (§ 08).",
+  "table_prefix": "wear_",
+  "requires": [
+    "identity"
+  ],
+  "provides": [
+    "Wearable"
+  ],
+  "emits": [
+    "wearable.day_recorded",
+    "wearable.weight_recorded"
+  ],
+  "listens": [
+    "coach.context"
+  ]
+}

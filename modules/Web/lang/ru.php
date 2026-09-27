@@ -1,0 +1,28 @@
+<?php
+// Строки оболочки приложения: навигация, приветствие, главный экран.
+return [
+    'ui.greet.morning' => 'Доброе утро',
+    'ui.greet.day'     => 'Добрый день',
+    'ui.greet.evening' => 'Добрый вечер',
+    'ui.greet.night'   => 'Доброй ночи',
+    'ui.nav.home'      => 'Главная',
+    'ui.nav.squad'     => 'Сквад',
+    'ui.nav.feed'      => 'Лента',
+    'ui.nav.me'        => 'Профиль',
+    'ui.w.ring'        => 'в скваде',
+    'ui.w.days'        => 'дней, чтобы изменить тело — вместе',
+    'ui.w.squad'       => 'Сквад из 6 человек',
+    'ui.w.coach'       => 'ИИ-тренер',
+    'ui.w.return'      => 'Можно сорваться — важно вернуться',
+    'ui.season_day'    => 'День сезона',
+    'ui.chapter_n'     => 'глава {n}',
+    'ui.of_season'     => 'сезона',
+    'ui.weekdays'      => 'Вс,Пн,Вт,Ср,Чт,Пт,Сб',
+    'ui.change'        => 'Изменить',
+    'ui.tile.week'     => 'Неделя',
+    'ui.tile.streak'   => 'Серия',
+    'ui.tile.shields'  => 'Щиты',
+    'ui.tile.event'    => 'Событие',
+    'ui.chat'          => 'Чат',
+    'ui.retry'         => 'Повторить',
+];

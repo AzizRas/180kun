@@ -1,0 +1,28 @@
+<?php
+// Ilova qobig‘i satrlari: navigatsiya, salomlashish, bosh ekran.
+return [
+    'ui.greet.morning' => 'Xayrli tong',
+    'ui.greet.day'     => 'Xayrli kun',
+    'ui.greet.evening' => 'Xayrli kech',
+    'ui.greet.night'   => 'Xayrli tun',
+    'ui.nav.home'      => 'Bosh sahifa',
+    'ui.nav.squad'     => 'Skvad',
+    'ui.nav.feed'      => 'Lenta',
+    'ui.nav.me'        => 'Profil',
+    'ui.w.ring'        => 'skvadda',
+    'ui.w.days'        => 'kun ichida tanani o‘zgartirish — birgalikda',
+    'ui.w.squad'       => '6 kishilik skvad',
+    'ui.w.coach'       => 'SI-murabbiy',
+    'ui.w.return'      => 'Yiqilish mumkin — muhimi qaytish',
+    'ui.season_day'    => 'Mavsum kuni',
+    'ui.chapter_n'     => '{n}-bob',
+    'ui.of_season'     => 'mavsum',
+    'ui.weekdays'      => 'Ya,Du,Se,Ch,Pa,Ju,Sh',
+    'ui.change'        => 'O‘zgartirish',
+    'ui.tile.week'     => 'Hafta',
+    'ui.tile.streak'   => 'Ketma-ket',
+    'ui.tile.shields'  => 'Qalqonlar',
+    'ui.tile.event'    => 'Hodisa',
+    'ui.chat'          => 'Chat',
+    'ui.retry'         => 'Qayta urinish',
+];

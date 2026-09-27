@@ -456,7 +456,11 @@ final class Squads
 
             $best = null;
             $bestCost = INF;
+            $access = $this->kernel->container->get(\App\Contracts\Access::class);
             foreach ($waiting as $row) {
+                if (!$access->hasSeason((int) $row['user_id'])) {
+                    continue;   // замена — тоже только с сезоном
+                }
                 $c   = Pool::toCandidate($row);
                 $try = array_merge($current, [$c]);
                 // Размер ещё может быть меньше пяти — нижнюю границу не проверяем.
@@ -659,6 +663,7 @@ final class Squads
             $wave = !empty($pool['wave_id']) ? $this->wave((int) $pool['wave_id']) : null;
             return [
                 'status'     => $pool === null ? 'none' : 'waiting',
+                'needs_season' => $pool !== null && !$this->kernel->container->get(\App\Contracts\Access::class)->hasSeason($userId),
                 'prefs_set'  => $pool !== null && (int) $pool['prefs_set'] === 1,
                 'mixed_ok'   => $pool !== null && (int) $pool['mixed_ok'] === 1,
                 'commit'     => $pool !== null ? (int) $pool['commit_level'] : 2,

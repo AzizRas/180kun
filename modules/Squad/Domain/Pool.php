@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace Modules\Squad\Domain;
 
+use App\Contracts\Access;
 use App\Contracts\Auth;
 use App\Kernel;
 use App\Result;
@@ -133,6 +134,11 @@ final class Pool
                 "SELECT * FROM squad_pool WHERE status = 'waiting' AND (wave_id = ?" . ($includeUnassigned ? ' OR wave_id IS NULL' : '') . ') ORDER BY user_id',
                 [$waveId]
             );
+
+        // В подбор идут только те, у кого есть сезон (§ 05: «прошёл онбординг
+        // и оплатил»). Без модуля оплаты заглушка пускает всех.
+        $access = $this->kernel->container->get(Access::class);
+        $rows   = array_values(array_filter($rows, static fn($r) => $access->hasSeason((int) $r['user_id'])));
 
         return array_map([self::class, 'toCandidate'], $rows);
     }

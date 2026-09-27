@@ -21,7 +21,12 @@ return static function (Router $router, Kernel $kernel): void {
     /** Оболочка приложения. Всё остальное рисует app.js. */
     $router->get('/', static function (Request $r, Kernel $k): Response {
         $lang    = $r->lang((string) $k->config->get('app.default_lang', 'ru'));
-        $version = '1.0.0';
+        // Версия ресурсов — от содержимого файлов: после деплоя Telegram и
+        // браузер обязаны забрать новый app.js, а не держать старый в кеше.
+        $version = substr(md5(implode('|', array_map(
+            static fn(string $f) => (string) @filemtime($k->root . '/assets/' . $f) . @filesize($k->root . '/assets/' . $f),
+            ['app.js', 'app.css']
+        ))), 0, 10);
         $e       = static fn(string $s): string => htmlspecialchars($s, ENT_QUOTES, 'UTF-8');
 
         $html = <<<HTML
@@ -30,7 +35,7 @@ return static function (Router $router, Kernel $kernel): void {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0B0F14">
+<meta name="theme-color" content="#F2F3EE">
 <title>{$e($k->i18n->t('ui.app_name', [], $lang))}</title>
 <link rel="manifest" href="/assets/manifest.json">
 <link rel="stylesheet" href="/assets/app.css?v={$version}">

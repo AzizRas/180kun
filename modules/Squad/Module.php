@@ -11,6 +11,7 @@ use Modules\Squad\Domain\Leadership;
 use Modules\Squad\Domain\Pool;
 use Modules\Squad\Domain\Scoring;
 use Modules\Squad\Domain\Squads;
+use Modules\Squad\Domain\TeamView;
 
 final class Module extends BaseModule
 {
@@ -27,6 +28,8 @@ final class Module extends BaseModule
             $c->get(Scoring::class),
             $c->get(Chat::class),
         ), 'squad');
+        $container->singleton(TeamView::class, static fn(Container $c) => new TeamView($kernel, $c->get(Squads::class), $c->get(Chat::class)), 'squad');
+        $container->singleton(\App\Contracts\Team::class, static fn(Container $c) => $c->get(TeamView::class), 'squad');
     }
 
     public function boot(Kernel $kernel): void
@@ -69,11 +72,63 @@ final class Module extends BaseModule
             return $p;
         }, 'squad');
 
+        // Лидер назначил созвон — это его работа на неделе (§ 09), засчитываем.
+        $kernel->events->on('calls.scheduled', static function (array $p) use ($kernel): array {
+            if (!empty($p['team_id']) && !empty($p['user_id'])) {
+                $kernel->container->get(Leadership::class)->touch((int) $p['team_id'], (int) $p['user_id']);
+            }
+            return $p;
+        }, 'squad');
+
+        // Такт планировщика: пересчитать действующие сквады, даже если
+        // никто не открывал приложение (пауза, замена, смена лидера).
+        $kernel->events->on('system.tick', static function (array $p) use ($kernel): array {
+            $squads = $kernel->container->get(Squads::class);
+            $n = 0;
+            foreach ($kernel->db()->all("SELECT id FROM squad_squads WHERE status = 'active'") as $row) {
+                $squads->sweep((int) $row['id']);
+                $n++;
+            }
+            if ($n > 0) {
+                $p['done'][] = 'squad: пересчитано ' . $n;
+            }
+            return $p;
+        }, 'squad');
+
         // Коллеги и родня (например, «сезон вдвоём» из модуля оплаты) —
         // в разные сквады.
         $kernel->events->on('people.related', static function (array $p) use ($kernel): array {
             $kernel->container->get(Pool::class)->relate((int) ($p['a'] ?? 0), (int) ($p['b'] ?? 0), (string) ($p['kind'] ?? 'known'));
             return $p;
         }, 'squad');
+
+
+        // Сквады в панели метрик: первая реакция и доживаемость (§ 13).
+        $kernel->events->on('analytics.collect', static function (array $p) use ($kernel): array {
+            $today = (string) ($p['today'] ?? gmdate('Y-m-d'));
+            $r = $kernel->container->get(Chat::class)->reactionMetrics();
+            $p['metrics'][] = ['group' => 'squads', 'key' => 'first_reaction', 'value' => $r['squads'], 'target' => 30, 'unit' => 'min', 'better' => 'lower', 'n' => (int) $r['samples']];
+            foreach ([30 => 85, 90 => 65, 180 => 50] as $day => $target) {
+                $mark = gmdate('Y-m-d', strtotime($today . ' 00:00:00 UTC') - $day * 86400);
+                $base = (int) $kernel->db()->value("SELECT COUNT(*) FROM squad_squads WHERE started_on IS NOT NULL AND started_on <= ?", [$mark], 0);
+                $dead = (int) $kernel->db()->value(
+                    "SELECT COUNT(*) FROM squad_squads WHERE started_on IS NOT NULL AND started_on <= ? AND status = 'disbanded' AND substr(disbanded_at, 1, 10) < date(started_on, '+' || ? || ' days')",
+                    [$mark, $day], 0
+                );
+                $p['metrics'][] = ['group' => 'squads', 'key' => 'alive_d' . $day, 'value' => $base > 0 ? 100.0 * ($base - $dead) / $base : null, 'target' => $target, 'n' => $base];
+            }
+            return $p;
+        }, 'squad');
+
+        // Права на данные (Р-19): выгрузка и удаление — только своих таблиц.
+        \App\UserData::register($kernel, 'squad', 'squad_', [
+            'squad_pool'         => [],
+            'squad_relations'    => ['where' => 'user_a = ? OR user_b = ?'],
+            'squad_chat_days'    => [],
+            // Место в скваде освобождается, а не пропадает из истории сквада:
+            // иначе сломаются командные счета прошлых недель у остальных.
+            'squad_members'      => ['erase' => "UPDATE squad_members SET status = 'left', left_reason = 'erased', left_on = date('now') WHERE user_id = ? AND status <> 'left'"],
+            'squad_leader_terms' => ['erase' => "UPDATE squad_leader_terms SET ended_on = date('now'), end_reason = 'left' WHERE user_id = ? AND ended_on IS NULL"],
+        ]);
     }
 }
