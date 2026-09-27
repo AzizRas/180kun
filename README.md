@@ -20,7 +20,7 @@
 5. Зарегистрируйтесь на `https://вашсайт/`.
 
 Требования к хостингу: PHP 8.0+, расширения `pdo_sqlite` и `mbstring`,
-`curl` — только если подключаете ИИ. MySQL, Node, Docker, Composer не нужны.
+`gd` — для фото, `curl` — только если подключаете ИИ. MySQL, Node, Docker, Composer не нужны.
 
 ## Railway (GitHub → Railway)
 
@@ -40,7 +40,14 @@ Railway сам узнаёт PHP-проект и берёт наш `Caddyfile`: �
    | `ADMIN_EMAIL` | первый зарегистрированный станет админом |
    | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_BOT_NAME`, `TELEGRAM_WEBHOOK_SECRET` | бот и Mini App |
    | `SMS_PROVIDER=eskiz`, `SMS_LOGIN`, `SMS_PASSWORD` | SMS-коды |
+   | `AI_ENABLED=true`, `AI_KEY` | ИИ-тренер (Gemini по умолчанию; `AI_BASE` — любой OpenAI-совместимый адрес) |
+   | `SAFETY_CONTACTS_RU`, `SAFETY_CONTACTS_UZ` | контакты помощи для кризисного протокола, строки через `\|` |
+   | `BILLING_CARDS` | реквизиты для перевода, строки через `\|`: «Uzcard 8600 … — ИП Иванов» |
+   | `BILLING_CONTACT` | @username или телефон для вопросов по оплате |
    | `APP_DEBUG=true` | только на время поиска ошибки |
+   | `DATA_RESIDENCY=UZ` | только на сервере в Узбекистане: включает фото. На Railway фото выключены всегда |
+   | `MEDIA_RETENTION_DAYS` | сколько дней хранить фото (по умолчанию 120) |
+   | `CALLS_PROVIDER=jitsi`, `JITSI_URL` | своя видеокомната вместо видеочата Telegram |
 
 3. Миграции применяются сами при первом запросе после деплоя.
 4. Проверка: `/health` — «Работает». Подробности — войти админом или
@@ -48,6 +55,16 @@ Railway сам узнаёт PHP-проект и берёт наш `Caddyfile`: �
 
 Все настройки читаются из переменных окружения, поэтому `config.php` на
 Railway править не нужно и секреты не попадают в GitHub.
+
+## Сервер в Узбекистане (фото, лента, созвоны)
+
+Фото с лицом — биометрия, по закону хранится только в Узбекистане. Полная
+инструкция переезда — `deploy/UZ-SERVER.md`: VDS с Caddy и PHP-FPM
+(готовые `deploy/Caddyfile.uz`, `deploy/php-fpm-level180.conf`,
+`deploy/level180.cron`, `deploy/backup.sh`) или обычный хостинг с панелью.
+Настройки там задаются в `config.local.php` (образец —
+`config.local.example.php`), такт планировщика — `php tools/tick.php`
+каждые 5 минут.
 
 ## Локальный запуск
 
@@ -74,7 +91,9 @@ php tools/make-module.php Squad  скелет нового модуля
 ## Резервная копия
 
 Вся база — один файл `level180.sqlite` в папке данных (`storage/db/` на
-хостинге, том `/data/db/` на Railway). Копируйте раз в неделю.
+хостинге, том `/data/db/` на Railway, `/var/lib/level180/db/` на своём
+сервере), фото — папка `media/` рядом. На своём сервере копию каждую ночь
+делает `deploy/backup.sh`.
 
 ## Документы
 
@@ -82,6 +101,7 @@ php tools/make-module.php Squad  скелет нового модуля
 |---|---|
 | `CLAUDE.md` | Инструкция для Claude: правила проекта и порядок работы |
 | `STATE.md` | Где мы остановились и что делаем следующим |
-| `ROADMAP.md` | Шесть срезов с критериями приёмки |
+| `ROADMAP.md` | Семь срезов с критериями приёмки |
 | `ARCHITECTURE.md` | Как устроены модули, события и контракты |
-| `DECISIONS.md` | Продуктовые решения Р-01…Р-22 и технические Т-01…Т-08 |
+| `DECISIONS.md` | Продуктовые решения Р-01…Р-22 и технические Т-01…Т-28 |
+| `deploy/UZ-SERVER.md` | Переезд на сервер в Узбекистане |

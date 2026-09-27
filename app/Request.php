@@ -7,6 +7,8 @@ final class Request
 {
     private array $params = [];
     private ?array $user  = null;
+    /** @var array<string, array{name: string, type: string, tmp_name: string, error: int, size: int}> */
+    private array $files  = [];
 
     private function __construct(
         private string $method,
@@ -44,7 +46,7 @@ final class Request
             }
         }
 
-        return new self(
+        $request = new self(
             strtoupper((string) ($_SERVER['REQUEST_METHOD'] ?? 'GET')),
             $path,
             $_GET,
@@ -52,6 +54,12 @@ final class Request
             $headers,
             $_COOKIE
         );
+        foreach ($_FILES as $name => $f) {
+            if (is_array($f) && isset($f['tmp_name']) && is_string($f['tmp_name'])) {
+                $request->files[(string) $name] = $f;
+            }
+        }
+        return $request;
     }
 
     /**
@@ -102,6 +110,32 @@ final class Request
     }
 
     public function body(): array  { return $this->body; }
+
+    /**
+     * Загруженный файл (multipart). Возвращает содержимое, а не путь:
+     * домену всё равно, пришёл файл формой или строкой base64.
+     */
+    public function fileBytes(string $name, int $maxBytes): ?string
+    {
+        $f = $this->files[$name] ?? null;
+        if ($f === null || (int) ($f['error'] ?? 1) !== UPLOAD_ERR_OK || (int) ($f['size'] ?? 0) > $maxBytes) {
+            return null;
+        }
+        $path = (string) $f['tmp_name'];
+        // В тестах файл подкладывается напрямую, в бою — только загруженный PHP.
+        if (!is_file($path) || (PHP_SAPI !== 'cli' && !is_uploaded_file($path))) {
+            return null;
+        }
+        $bytes = file_get_contents($path);
+        return $bytes === false ? null : $bytes;
+    }
+
+    /** Для тестов: подложить загруженный файл. */
+    public function withFile(string $name, string $path): self
+    {
+        $this->files[$name] = ['name' => basename($path), 'type' => '', 'tmp_name' => $path, 'error' => UPLOAD_ERR_OK, 'size' => (int) filesize($path)];
+        return $this;
+    }
     public function query(): array { return $this->query; }
 
     public function header(string $name, ?string $default = null): ?string

@@ -9,6 +9,20 @@
  * Приоритет: переменная окружения → значение в этом файле.
  */
 
+/**
+ * Хостинг без переменных окружения (обычная панель, cPanel): те же имена
+ * переменных можно записать в config.local.php рядом с этим файлом —
+ * см. config.local.example.php. Настоящая переменная окружения важнее.
+ * Файл закрыт от браузера (.htaccess, Caddyfile) и не попадает в Git.
+ */
+if (is_file(__DIR__ . '/config.local.php')) {
+    foreach ((array) require __DIR__ . '/config.local.php' as $name => $value) {
+        if (is_string($name) && getenv($name) === false && is_scalar($value)) {
+            putenv($name . '=' . (is_bool($value) ? ($value ? 'true' : 'false') : (string) $value));
+        }
+    }
+}
+
 /** Читает переменную окружения с приведением типов. */
 $env = static function (string $name, mixed $default = null): mixed {
     $value = getenv($name);
@@ -49,6 +63,11 @@ return [
         'timezone'     => $env('APP_TZ', 'Asia/Tashkent'),
         'secret'       => $env('APP_SECRET', ''),                  // пусто = DATA_DIR/secret.key
         'data_dir'     => $dataDir,
+
+        // Где физически стоит сервер. «UZ» пишет владелец, когда приложение
+        // развёрнуто в Узбекистане: без этого фото не принимаются (биометрия
+        // по закону хранится внутри страны), а /health предупреждает.
+        'data_residency' => strtoupper((string) $env('DATA_RESIDENCY', '')),
 
         // Применять миграции самостоятельно при первом запросе после
         // деплоя. Выключайте только если запускаете tools/migrate.php сами.
@@ -109,11 +128,51 @@ return [
         'daily_limit' => 40,
     ],
 
-    // Ручной доступ, пока нет эквайринга (нужно юрлицо).
+    // Контакты помощи в кризисном протоколе (Р-12). Пусто — берутся из
+    // переводов модуля Safety. Строки разделяются «|».
+    // ПЕРЕД ЗАПУСКОМ: проверить, что номера действуют.
+    'safety' => [
+        'contacts_ru' => $env('SAFETY_CONTACTS_RU', ''),
+        'contacts_uz' => $env('SAFETY_CONTACTS_UZ', ''),
+    ],
+
+    // Ручной доступ, пока нет эквайринга (нужно юрлицо). Решение Р-20.
     'billing' => [
         'trial_days'   => 14,                       // Нулевой цикл
-        'cards'        => [],                       // ['bank' => 'Uzcard', 'number' => '8600 …']
-        'contact'      => $env('BILLING_CONTACT', ''),
-        'season_price' => 390000,                   // сум, решение Р-20
+        // Куда переводить. Строки через «|»: «Uzcard 8600 1234 5678 9012 — Иванов И.»
+        'cards'        => $env('BILLING_CARDS', ''),
+        'contact'      => $env('BILLING_CONTACT', ''),   // @username или телефон для вопросов
+        'prices'       => [
+            'season'      => 390000,                // сезон разом
+            'installment' => 79000,                 // 6 платежей по 79 000
+            'duo'         => 690000,                // два места
+            'second'      => 290000,                // второй сезон подряд
+        ],
+        'installments' => 6,
+        'referral_bonus' => 50000,                  // обоим, когда приглашённый дошёл до дня 30
+    ],
+
+    // Срез 7. Фото действия (тарелка, зал, маршрут — не тело).
+    'media' => [
+        'enabled'        => $env('MEDIA_ENABLED', true),
+        'dir'            => $env('MEDIA_DIR', $dataDir . '/media'),   // вне публичной папки
+        'max_upload_mb'  => 10,
+        'max_side'       => 1600,                   // длинная сторона полного фото
+        'thumb_side'     => 480,
+        'daily_limit'    => 6,                      // фото на человека в сутки
+        'retention_days' => $env('MEDIA_RETENTION_DAYS', 120),   // потом файл стирается
+    ],
+
+    'feed' => [
+        'posts_per_day' => 3,
+        'caption_max'   => 280,
+        'hide_after_reports' => 2,                  // «тело» и «чужое лицо» — скрываются сразу
+    ],
+
+    // Созвоны сквада. telegram — видеочат группы сквада; jitsi — своя
+    // комната на JITSI_URL (например, Jitsi на том же узбекском сервере).
+    'calls' => [
+        'provider'  => $env('CALLS_PROVIDER', 'telegram'),
+        'jitsi_url' => $env('JITSI_URL', ''),
     ],
 ];

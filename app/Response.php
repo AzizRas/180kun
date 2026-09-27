@@ -34,6 +34,12 @@ final class Response
         return new self($text, $status, ['Content-Type' => 'text/plain; charset=utf-8']);
     }
 
+    /** Файл целиком из памяти: картинки, выгрузки. */
+    public static function binary(string $bytes, string $contentType, array $headers = [], int $status = 200): self
+    {
+        return new self($bytes, $status, ['Content-Type' => $contentType, 'Content-Length' => (string) strlen($bytes)] + $headers);
+    }
+
     public static function redirect(string $to, int $status = 302): self
     {
         return new self('', $status, ['Location' => $to]);

@@ -2,7 +2,7 @@
    открывалось при плохой связи. API никогда не кешируется — данные
    о прогрессе должны быть свежими. */
 
-var CACHE = 'l180-shell-v1';
+var CACHE = 'l180-shell-v2';
 var SHELL = ['/', '/assets/app.css', '/assets/app.js', '/assets/manifest.json', '/assets/icon.svg'];
 
 self.addEventListener('install', function (e) {
@@ -21,7 +21,8 @@ self.addEventListener('activate', function (e) {
 
 self.addEventListener('fetch', function (e) {
   var url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.pathname.indexOf('/api/') === 0) return;
+  // Чужие адреса (скрипт Telegram) и API не трогаем: браузер сходит сам.
+  if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.indexOf('/api/') === 0) return;
 
   e.respondWith(
     fetch(e.request).then(function (res) {

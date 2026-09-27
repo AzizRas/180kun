@@ -143,3 +143,38 @@ final class NullGamification implements Gamification
         return ['xp' => 0, 'level' => 0, 'streak' => 0, 'shields' => 0];
     }
 }
+
+final class NullAccess implements Access
+{
+    public function hasSeason(int $userId, ?string $date = null): bool { return true; }
+
+    public function status(int $userId): array
+    {
+        return ['status' => 'free', 'until' => null, 'trial_left' => null];
+    }
+}
+
+final class NullTeam implements Team
+{
+    public function teamOf(int $userId): ?array { return null; }
+    public function isMember(int $teamId, int $userId): bool { return false; }
+    public function announce(int $teamId, string $text): bool { return false; }
+}
+
+final class NullMedia implements Media
+{
+    public function available(): array { return ['ok' => false, 'reason' => 'disabled']; }
+    public function store(int $userId, string $bytes, string $purpose): \App\Result { return \App\Result::fail('media_off'); }
+    public function url(int $mediaId, int $viewerId, string $variant = 'thumb', int $ttl = 600): ?string { return null; }
+    public function info(int $mediaId): ?array { return null; }
+    public function delete(int $mediaId, string $reason): bool { return false; }
+}
+
+final class NullCallProvider implements CallProvider
+{
+    public function name(): string { return 'none'; }
+    public function room(array $team, array $session): array
+    {
+        return ['url' => $team['chat_link'] ?? null, 'how' => 'calls.how.none'];
+    }
+}

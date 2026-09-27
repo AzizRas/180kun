@@ -26,6 +26,10 @@ $kernel->container->fallback(Contracts\Notifier::class,     static fn() => new C
 $kernel->container->fallback(Contracts\Planner::class,      static fn() => new Contracts\NullPlanner());
 $kernel->container->fallback(Contracts\Wearable::class,     static fn() => new Contracts\NullWearable());
 $kernel->container->fallback(Contracts\Gamification::class, static fn() => new Contracts\NullGamification());
+$kernel->container->fallback(Contracts\Access::class,       static fn() => new Contracts\NullAccess());
+$kernel->container->fallback(Contracts\Team::class,         static fn() => new Contracts\NullTeam());
+$kernel->container->fallback(Contracts\Media::class,        static fn() => new Contracts\NullMedia());
+$kernel->container->fallback(Contracts\CallProvider::class, static fn() => new Contracts\NullCallProvider());
 
 $kernel->boot();
 
