@@ -59,4 +59,24 @@ return static function (Router $router, Kernel $kernel): void {
         $body   = $mayViewDetails($r, $k) ? $report : $brief($report);
         return Response::json($body, $report['ok'] ? 200 : 503);
     });
+
+    /**
+     * Такт планировщика: напоминания о созвонах, чистка просроченных фото,
+     * пересчёт сквадов. На сервере его дёргает cron:
+     *
+     *   0-59/5 * * * * php /путь/к/level180/tools/tick.php
+     *
+     * Если cron нет (Railway), тот же такт можно звать по ссылке с ключом
+     * HEALTH_KEY. Кто и что делает на такте — решают модули; ядро и этот
+     * маршрут о них не знают.
+     */
+    $router->add('GET', '/api/tick', $tick = static function (Request $r, Kernel $k): Response {
+        $key = (string) $k->config->get('admin.health_key', '');
+        if ($key === '' || !hash_equals($key, $r->str('key'))) {
+            return Response::json(['error' => 'not_found'], 404);
+        }
+        $p = $k->events->emit('system.tick', ['now' => gmdate('c'), 'done' => []]);
+        return Response::json(['ok' => true, 'done' => $p['done']]);
+    });
+    $router->add('POST', '/api/tick', $tick);
 };

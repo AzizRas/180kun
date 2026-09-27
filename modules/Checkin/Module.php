@@ -110,5 +110,57 @@ final class Module extends BaseModule
             $p['stats'] = $stats;
             return $p;
         }, 'checkin');
+
+        // Тренеру — отметки за окно, прогресс недели, серия и помехи.
+        $kernel->events->on('coach.context', static function (array $p) use ($kernel): array {
+            $userId = (int) ($p['user_id'] ?? 0);
+            $from   = (string) ($p['from'] ?? '');
+            $to     = (string) ($p['to'] ?? gmdate('Y-m-d'));
+            if ($userId <= 0 || $from === '') {
+                return $p;
+            }
+            $p['checkins'] = $kernel->db()->all(
+                'SELECT date, done, energy, mood, skip_reason FROM checkin_days WHERE user_id = ? AND date BETWEEN ? AND ? ORDER BY date',
+                [$userId, $from, $to]
+            );
+
+            /** @var Week $week */
+            $week     = $kernel->container->get(Week::class);
+            $streak   = $kernel->container->get(Streak::class);
+            $progress = $streak->recompute($userId, $week->startFor($userId, $to));
+            $p['week']   = ['done_days' => $progress['done_days'], 'norm_days' => $progress['norm']['days'], 'checkins' => $progress['checkins']];
+            $p['streak'] = $streak->current($userId);
+
+            $weekAgo = gmdate('Y-m-d', strtotime($to . ' 00:00:00 UTC') - 6 * 86400);
+            $events  = $kernel->db()->all(
+                'SELECT type, date_from, date_to FROM checkin_events WHERE user_id = ? AND date_to >= ? AND date_from <= ?',
+                [$userId, $weekAgo, $to]
+            );
+            $p['event_active'] = $events !== [];
+            foreach ($events as $e) {
+                if ($e['date_from'] <= $to && $e['date_to'] >= $to) {
+                    $p['event_type'] = $e['type'];
+                }
+            }
+            return $p;
+        }, 'checkin');
+
+
+        // Главная метрика продукта — Return Rate (Р-21). Считаем мы: это наши данные.
+        $kernel->events->on('analytics.collect', static function (array $p) use ($kernel): array {
+            $rr = $kernel->container->get(Recovery::class)->returnRate();
+            $p['metrics'][] = ['group' => 'core', 'key' => 'return_rate', 'value' => $rr['gaps'] > 0 ? (float) $rr['rate'] : null, 'target' => 55, 'n' => (int) $rr['gaps']];
+            return $p;
+        }, 'checkin');
+
+        // Права на данные (Р-19): выгрузка и удаление — только своих таблиц.
+        \App\UserData::register($kernel, 'checkin', 'checkin_', [
+            'checkin_days'    => [],
+            'checkin_events'  => [],
+            'checkin_weeks'   => [],
+            'checkin_shields' => [],
+            'checkin_returns' => [],
+            'checkin_state'   => [],
+        ]);
     }
 }

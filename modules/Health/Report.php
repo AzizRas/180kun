@@ -117,6 +117,32 @@ final class Report
             }
         }
 
+        // Где стоит сервер. Биометрию (а фото с лицом ею может оказаться)
+        // закон Узбекистана требует хранить внутри страны; остальные данные
+        // с поправками 2026 года — по условиям закона. Владелец заявляет это
+        // явно: код не может узнать страну дата-центра сам.
+        $residency = (string) $this->kernel->config->get('app.data_residency', '');
+        $foreign   = getenv('RAILWAY_ENVIRONMENT') !== false ? 'Railway'
+            : (getenv('RENDER') !== false ? 'Render' : (getenv('FLY_APP_NAME') !== false ? 'Fly.io' : null));
+        $checks[] = $this->check(
+            'Сервер в Узбекистане',
+            $residency === 'UZ' && $foreign === null,
+            $foreign !== null
+                ? "это {$foreign}, сервер за рубежом — фото не принимаются независимо от DATA_RESIDENCY"
+                : ($residency === 'UZ' ? 'DATA_RESIDENCY=UZ' : 'не заявлено (DATA_RESIDENCY) — фото не принимаются'),
+            warnOnly: true
+        );
+
+        // Проверки модулей: каждый сам знает, что ему нужно от сервера.
+        try {
+            $extra = $this->kernel->events->emit('health.checks', ['checks' => []]);
+            foreach ((array) ($extra['checks'] ?? []) as $c) {
+                $checks[] = $this->check((string) ($c['title'] ?? '?'), (bool) ($c['ok'] ?? false), (string) ($c['note'] ?? ''), (bool) ($c['warn'] ?? false));
+            }
+        } catch (\Throwable $e) {
+            $checks[] = $this->check('Проверки модулей', false, $e->getMessage(), warnOnly: true);
+        }
+
         // --- Сборка ---
         $modules = [];
         foreach ($this->kernel->modules->all() as $info) {

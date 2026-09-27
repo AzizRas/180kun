@@ -219,10 +219,16 @@ final class Checkins
 
         // Очки, уведомления и всё прочее навешиваются на это событие.
         // Сам модуль чек-ина не знает, слушает ли его кто-нибудь.
-        $this->kernel->events->emit('checkin.recorded', [
+        // Слушатели могут дополнить ответ: модуль безопасности кладёт сюда
+        // помощь, если в заметке триггерная тема (Р-12).
+        $after = $this->kernel->events->emit('checkin.recorded', [
             'user_id'    => $userId,
             'date'       => $date,
             'done'       => $done,
+            'energy'     => $energy,
+            'mood'       => $mood,
+            'skip_reason'=> $data['skip_reason'],
+            'note'       => (string) ($data['note'] ?? ''),
             'first_time' => $first,
             'returned'   => $gap > 0,
             'gap_days'   => $gap,
@@ -242,6 +248,7 @@ final class Checkins
                 'kept'      => $progress['kept'],
             ],
             'streak'   => $streakNow,
+            'safety'   => $after['safety'] ?? null,
         ]);
     }
 

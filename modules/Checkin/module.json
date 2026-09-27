@@ -16,6 +16,8 @@
     "checkin.event_marked"
   ],
   "listens": [
+    "analytics.collect",
+    "coach.context",
     "gamification.extras",
     "squad.activity",
     "squad.member_weeks"

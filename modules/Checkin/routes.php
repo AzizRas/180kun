@@ -52,6 +52,25 @@ return static function (Router $router, Kernel $kernel): void {
             ? $k->i18n->t('checkin.welcome_back')
             : $k->i18n->t('checkin.saved');
 
+        // Ответ тренера. В кризисной теме тренер молчит: говорит только
+        // заранее написанный текст модуля безопасности (Р-12).
+        $payload['coach'] = null;
+        if (empty($payload['safety'])) {
+            try {
+                $payload['coach'] = $k->container->get(App\Contracts\Coach::class)->replyToCheckin([
+                    'user_id'     => (int) $r->userId(),
+                    'date'        => $payload['date'],
+                    'done'        => (string) $r->input('done', ''),
+                    'energy'      => $r->input('energy'),
+                    'mood'        => $r->input('mood'),
+                    'skip_reason' => $r->input('skip_reason'),
+                ]);
+            } catch (\Throwable $e) {
+                // Тренер не должен ломать чек-ин: отметка уже записана.
+                $k->log('error', 'Тренер упал на чек-ине: ' . $e->getMessage());
+            }
+        }
+
         return Response::json($payload);
     }, ['auth' => true]);
 

@@ -83,5 +83,11 @@ final class Module extends BaseModule
             }
             return $p;
         }, 'gamification');
+
+        // Права на данные (Р-19): выгрузка и удаление — только своих таблиц.
+        \App\UserData::register($kernel, 'gamification', 'gami_', [
+            'gami_ledger'  => [],
+            'gami_profile' => [],
+        ]);
     }
 }

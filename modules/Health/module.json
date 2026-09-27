@@ -6,6 +6,9 @@
   "table_prefix": "health_",
   "requires": [],
   "provides": [],
-  "emits": [],
+  "emits": [
+    "health.checks",
+    "system.tick"
+  ],
   "listens": []
 }

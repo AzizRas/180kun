@@ -164,6 +164,8 @@ final class Ledger implements Gamification
             'streak'      => (int) ($extras['streak'] ?? 0),
             'best_streak' => (int) ($extras['best_streak'] ?? 0),
             'shields'     => (int) ($extras['shields'] ?? 0),
+            // Режим тишины (модуль безопасности): очки не показываем.
+            'quiet'       => !empty($extras['quiet']),
         ];
     }
 
