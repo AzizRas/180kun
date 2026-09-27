@@ -41,6 +41,29 @@ final class Module extends BaseModule
             return $p;
         }, 'planning');
 
+        // Облегчение по флагам нагрузки (Р-14). Кто решил облегчить — нам
+        // не важно (сейчас это тренер); важно, что сделать тяжелее так нельзя.
+        $kernel->events->on('plan.load_adjust', static function (array $p) use ($kernel): array {
+            $p['applied'] = $kernel->container->get(PlanService::class)->adjust(
+                (int) ($p['user_id'] ?? 0),
+                (float) ($p['factor'] ?? 1),
+                (string) ($p['from'] ?? gmdate('Y-m-d')),
+                (int) ($p['days'] ?? 3),
+                (string) ($p['level'] ?? 'yellow'),
+                (array) ($p['reasons'] ?? [])
+            );
+            return $p;
+        }, 'planning');
+
+        // Вернулся после паузы больше недели — не с того места, где бросил,
+        // а с 60% и плавным догоном.
+        $kernel->events->on('user.returned', static function (array $p) use ($kernel): array {
+            if ((int) ($p['gap_days'] ?? 0) > 7) {
+                $kernel->container->get(PlanService::class)->rampAfterPause((int) $p['user_id'], (string) ($p['date'] ?? gmdate('Y-m-d')));
+            }
+            return $p;
+        }, 'planning');
+
         // Синхронный старт (Р-07): кто-то (сейчас — модуль сквадов) назначил
         // людям общий день 1. План сдвигается целиком, содержимое не меняется.
         $kernel->events->on('season.scheduled', static function (array $p) use ($kernel): array {
@@ -56,5 +79,13 @@ final class Module extends BaseModule
             }
             return $p;
         }, 'planning');
+
+        // Права на данные (Р-19): выгрузка и удаление — только своих таблиц.
+        \App\UserData::register($kernel, 'planning', 'planning_', [
+            'planning_chapters'    => ['where' => 'plan_id IN (SELECT id FROM planning_plans WHERE user_id = ?)'],
+            'planning_weeks'       => ['where' => 'plan_id IN (SELECT id FROM planning_plans WHERE user_id = ?)'],
+            'planning_adjustments' => [],
+            'planning_plans'       => [],
+        ]);
     }
 }

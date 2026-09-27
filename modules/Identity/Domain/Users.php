@@ -228,6 +228,82 @@ final class Users
         $this->kernel->events->emit('user.lang_changed', ['user_id' => $id, 'lang' => $lang]);
     }
 
+    /**
+     * Удаление аккаунта (Р-19). Остальные модули уже стёрли свои данные по
+     * событию user.erase; здесь от человека остаётся только номер строки,
+     * чтобы старые ссылки в чужих таблицах не указывали на нового человека.
+     */
+    public function erase(int $id): void
+    {
+        $this->kernel->db()->transaction(function () use ($id): void {
+            $user = $this->findById($id);
+            $this->kernel->db()->run('DELETE FROM identity_sessions WHERE user_id = ?', [$id]);
+            if ($user !== null) {
+                $this->kernel->db()->run('DELETE FROM identity_codes WHERE phone = ?', [$user['phone']]);
+                $this->kernel->db()->run('DELETE FROM identity_attempts WHERE phone = ?', [$user['phone']]);
+            }
+            $this->kernel->db()->update('identity_users', [
+                'phone'         => 'deleted:' . $id,
+                'email'         => null,
+                'name'          => '',
+                'password_hash' => '',
+                'tg_id'         => null,
+                'tg_username'   => null,
+                'status'        => 'deleted',
+                'role'          => 'user',
+            ], 'id = :id', ['id' => $id]);
+        });
+        $this->kernel->events->emit('user.erased', ['user_id' => $id]);
+    }
+
+    /** Для модератора: поиск по имени или последним цифрам номера. */
+    public function search(string $q, int $limit = 30): array
+    {
+        $q = trim($q);
+        if ($q === '') {
+            $rows = $this->kernel->db()->all("SELECT * FROM identity_users WHERE status <> 'deleted' ORDER BY id DESC LIMIT ?", [$limit]);
+        } else {
+            $digits = preg_replace('/\D+/', '', $q);
+            $rows   = $this->kernel->db()->all(
+                "SELECT * FROM identity_users WHERE status <> 'deleted' AND (name LIKE ? OR (? <> '' AND phone LIKE ?) OR tg_username LIKE ?)
+                 ORDER BY id DESC LIMIT ?",
+                ['%' . $q . '%', $digits, '%' . $digits . '%', '%' . ltrim($q, '@') . '%', $limit]
+            );
+        }
+        return array_map(fn(array $u) => [
+            'id'         => (int) $u['id'],
+            'name'       => (string) $u['name'],
+            'phone'      => str_starts_with((string) $u['phone'], 'tg:') ? null : (string) $u['phone'],
+            'tg'         => $u['tg_username'] ?? null,
+            'role'       => (string) $u['role'],
+            'status'     => (string) $u['status'],
+            'lang'       => (string) $u['lang'],
+            'created_at' => (string) $u['created_at'],
+            'last_seen'  => $u['last_seen_at'],
+        ], $rows);
+    }
+
+    public function setRole(int $id, string $role): bool
+    {
+        if (!in_array($role, ['user', 'moderator', 'admin'], true) || $this->findById($id) === null) {
+            return false;
+        }
+        $this->kernel->db()->update('identity_users', ['role' => $role], 'id = :id', ['id' => $id]);
+        return true;
+    }
+
+    public function setStatus(int $id, string $status): bool
+    {
+        if (!in_array($status, ['active', 'blocked'], true) || $this->findById($id) === null) {
+            return false;
+        }
+        $this->kernel->db()->update('identity_users', ['status' => $status], 'id = :id', ['id' => $id]);
+        if ($status === 'blocked') {
+            $this->kernel->db()->run('DELETE FROM identity_sessions WHERE user_id = ?', [$id]);
+        }
+        return true;
+    }
+
     /** Публичный вид пользователя: без хеша пароля. */
     public function publicView(array $user): array
     {

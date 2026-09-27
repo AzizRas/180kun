@@ -1,5 +1,15 @@
 <?php
 return [
+    'identity.erase_confirm' => 'Akkauntni o‘chirish uchun O‘CHIRISH so‘zini yozing.',
+    'identity.admin_self'    => 'O‘zingizni o‘zgartirib bo‘lmaydi — boshqa administratordan so‘rang.',
+    'me.title'        => 'Mening ma’lumotlarim',
+    'me.export_json'  => 'Hammasini yuklab olish (JSON)',
+    'me.export_csv'   => 'Kunlarni yuklab olish (CSV)',
+    'me.export_hint'  => 'Butun tarixingiz: anketa, reja, belgilashlar, bilaguzuk, skvad, to‘lovlar. Yuklab olish doimo mavjud, mavsumdan keyin ham.',
+    'me.erase'        => 'Akkauntni o‘chirish',
+    'me.erase_hint'   => 'Anketa, reja, belgilashlar, bilaguzuk ma’lumotlari, murabbiy tahlillari, skvaddagi joy o‘chiriladi. Faqat shaxssiz statistika va ismsiz to‘lov summalari qoladi — bu buxgalteriya hujjati. Bekor qilib bo‘lmaydi.',
+    'me.erase_word'   => 'O‘CHIRISH deb yozing',
+    'me.erased'       => 'Akkaunt o‘chirildi. Biz bilan bo‘lganingiz uchun rahmat.',
     'identity.bad_phone'             => 'Raqamni tekshiring: u O‘zbekiston raqami bo‘lishi kerak, masalan +998 90 123 45 67.',
     'identity.weak_password'         => 'Parol {min} ta belgidan qisqa.',
     'identity.phone_taken'           => 'Bu raqamda hisob allaqachon mavjud. Kiring yoki parolni tiklang.',

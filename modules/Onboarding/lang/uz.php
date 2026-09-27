@@ -1,5 +1,10 @@
 <?php
 return [
+    'onboarding.consent_required'       => 'Salomatlik ma’lumotlarini qayta ishlashga rozilik kerak — usiz reja tuzib bo‘lmaydi.',
+    'consent.title'   => 'Salomatlik ma’lumotlari',
+    'consent.text'    => 'Xavfsiz reja tuzish uchun bo‘y, vazn, faollik va qarshi ko‘rsatmalarni so‘raymiz. Bu salomatlik ma’lumotlari. Ular serverimizda saqlanadi, sotilmaydi va boshqa ishtirokchilarga ko‘rsatilmaydi. Ularni istalgan vaqtda yuklab olish yoki o‘chirish mumkin. LEVEL 180 — qo‘llab-quvvatlash dasturi, tibbiy xizmat emas.',
+    'consent.agree'   => 'Salomatlik ma’lumotlarini qayta ishlashga roziman',
+    'consent.next'    => 'Davom etish',
     'onboarding.invalid_answers'        => 'To‘ldirilgan maydonlarni tekshiring.',
     'onboarding.no_profile'             => 'Avval savollarga javob bering.',
     'onboarding.no_baseline'            => 'Nol tsikl hali boshlanmadi.',

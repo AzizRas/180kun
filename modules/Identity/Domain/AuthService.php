@@ -53,7 +53,7 @@ final class AuthService implements Auth
         }
 
         $user = $this->users->findById((int) $row['user_id']);
-        if ($user === null || $user['status'] === 'blocked') {
+        if ($user === null || in_array($user['status'], ['blocked', 'deleted'], true)) {
             return $this->cache[$request] = null;
         }
 

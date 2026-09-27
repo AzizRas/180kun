@@ -62,12 +62,19 @@ final class Profiles
     /** Шаг 1: ответы на восемь вопросов. */
     public function saveAnswers(int $userId, array $input): Result
     {
+        $existing = $this->find($userId);
+
+        // Согласие на данные о здоровье — до первого сохранения анкеты.
+        $consented = !empty($input['consent_health']) || !empty($existing['consent_health_at']);
+        if (!$consented) {
+            return Result::fail('consent_required');
+        }
+
         [$clean, $errors] = Questions::validate($input);
         if ($errors !== []) {
             return Result::fail('invalid_answers', ['fields' => $errors]);
         }
 
-        $existing = $this->find($userId);
         $data     = [
             'goal_dir'    => $clean['goal_dir'],
             'sex'         => $clean['sex'],
@@ -83,6 +90,9 @@ final class Profiles
             'fasting'     => $clean['fasting'],
             'status'      => 'draft',
         ];
+        if (empty($existing['consent_health_at'])) {
+            $data['consent_health_at'] = gmdate('c');
+        }
 
         if ($existing === null) {
             $this->kernel->db()->insert('onboarding_profiles', $data + [

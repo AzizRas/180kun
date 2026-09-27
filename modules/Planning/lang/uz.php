@@ -1,5 +1,8 @@
 <?php
 return [
+    'plan.adjust.yellow' => 'Yuklama {date} gacha {pct}% yengillashtirildi: tana tiklanishni so‘rayapti. Buni siz emas, reja hal qiladi.',
+    'plan.adjust.red'    => 'Yuklama {date} gacha ikki baravar kam. Tinch holatdagi puls odatiy holatga qaytmasa — shifokorga ko‘rining.',
+    'plan.adjust.ramp'   => 'Pauzadan keyin yumshoq boshlaymiz: yuklama {date} gacha {pct}% kam, keyin reja o‘zi yetib oladi.',
     'plan.none'          => 'Hozircha reja yo‘q. Onboardingdan o‘ting.',
     'plan.title'         => '180 kunlik reja',
     'plan.day'           => '{n}-kun',

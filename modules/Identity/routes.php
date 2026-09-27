@@ -215,4 +215,98 @@ return static function (Router $router, Kernel $kernel): void {
         $users->setLang((int) $r->userId(), $lang);
         return Response::json(['lang' => $lang])->withCookie('lang', $lang, 365, false);
     }, ['auth' => true]);
+
+    // ---------------- права на данные (Р-19) ----------------
+
+    /**
+     * Вся моя история одной кнопкой. Каждый модуль сам кладёт в выгрузку
+     * свои таблицы (событие user.export) — ядро не знает, что где лежит.
+     *   ?format=json — всё целиком;  ?format=csv — дни: чек-ины и браслет.
+     */
+    $router->get('/api/me/export', static function (Request $r, Kernel $k): Response {
+        $users = $k->container->get(Users::class);
+        $data  = $k->events->emit('user.export', [
+            'user_id'  => (int) $r->userId(),
+            'sections' => ['identity' => ['account' => $users->publicView($r->user()) + ['created_at' => $r->user()['created_at']]]],
+        ]);
+        $sections = $data['sections'] ?? [];
+
+        if ($r->str('format') === 'csv') {
+            $days = [];
+            foreach ($sections['checkin']['checkin_days'] ?? [] as $d) {
+                $days[$d['date']] = ['date' => $d['date'], 'done' => $d['done'], 'energy' => $d['energy'], 'mood' => $d['mood'], 'skip_reason' => $d['skip_reason']];
+            }
+            foreach ($sections['wearable']['wear_days'] ?? [] as $w) {
+                $days[$w['date']] = ($days[$w['date']] ?? ['date' => $w['date']]) + ['steps' => $w['steps'], 'sleep_min' => $w['sleep_min'], 'rhr' => $w['rhr'], 'active_min' => $w['active_min']];
+            }
+            ksort($days);
+            $cols = ['date', 'done', 'energy', 'mood', 'skip_reason', 'steps', 'sleep_min', 'rhr', 'active_min'];
+            $csv  = implode(',', $cols) . "\n";
+            foreach ($days as $row) {
+                $csv .= implode(',', array_map(static fn($c) => (string) ($row[$c] ?? ''), $cols)) . "\n";
+            }
+            return Response::text($csv)
+                ->withHeader('Content-Type', 'text/csv; charset=utf-8')
+                ->withHeader('Content-Disposition', 'attachment; filename="level180-days.csv"');
+        }
+
+        return Response::json(['exported_at' => gmdate('c'), 'sections' => $sections])
+            ->withHeader('Content-Disposition', 'attachment; filename="level180-export.json"');
+    }, ['auth' => true]);
+
+    /**
+     * Удаление аккаунта. Подтверждение словом — от случайного нажатия.
+     * Сначала все модули стирают свои данные (user.erase), затем аккаунт.
+     */
+    $router->post('/api/me/erase', static function (Request $r, Kernel $k): Response {
+        $word = mb_strtoupper(trim($r->str('confirm')));
+        if (!in_array($word, ['УДАЛИТЬ', 'DELETE', "O'CHIRISH", 'OʻCHIRISH', 'O‘CHIRISH'], true)) {
+            return Response::json(['error' => 'confirm_required', 'message' => $k->i18n->t('identity.erase_confirm')], 422);
+        }
+        $userId = (int) $r->userId();
+        $result = $k->events->emit('user.erase', ['user_id' => $userId, 'erased' => []]);
+        $k->container->get(Users::class)->erase($userId);
+        return Response::json(['ok' => true, 'erased' => $result['erased'] ?? []])->withCookie('l180_session', '', -1);
+    }, ['auth' => true]);
+
+    // ---------------- модератор: люди и роли ----------------
+
+    $router->get('/api/admin/users', static function (Request $r, Kernel $k): Response {
+        if (!in_array((string) ($r->user()['role'] ?? ''), ['admin', 'moderator'], true)) {
+            return Response::json(['error' => 'forbidden'], 403);
+        }
+        return Response::json(['ok' => true, 'users' => $k->container->get(Users::class)->search($r->str('q'))]);
+    }, ['auth' => true]);
+
+    /** Роли меняет только админ; блокирует и модератор. Себя понизить или заблокировать нельзя. */
+    $router->post('/api/admin/users/{id}/{action}', static function (Request $r, Kernel $k): Response {
+        $role   = (string) ($r->user()['role'] ?? '');
+        $action = (string) $r->param('action');
+        $target = (int) $r->param('id');
+        $users  = $k->container->get(Users::class);
+
+        if (!in_array($role, ['admin', 'moderator'], true) || ($action === 'role' && $role !== 'admin')) {
+            return Response::json(['error' => 'forbidden'], 403);
+        }
+        if ($target === (int) $r->userId()) {
+            return Response::json(['error' => 'self', 'message' => $k->i18n->t('identity.admin_self')], 422);
+        }
+
+        $ok = match ($action) {
+            'role'    => $users->setRole($target, $r->str('role')),
+            'block'   => $users->setStatus($target, 'blocked'),
+            'unblock' => $users->setStatus($target, 'active'),
+            default   => null,
+        };
+        if ($ok === null) {
+            return Response::json(['error' => 'not_found'], 404);
+        }
+        if ($ok) {
+            $k->events->emit('admin.action', [
+                'actor_id' => (int) $r->userId(), 'module' => 'identity', 'action' => $action,
+                'target_id' => $target, 'meta' => $action === 'role' ? ['role' => $r->str('role')] : [],
+            ]);
+        }
+        return $ok ? Response::json(['ok' => true]) : Response::json(['error' => 'bad_request'], 422);
+    }, ['auth' => true]);
 };

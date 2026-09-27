@@ -44,5 +44,24 @@ final class Module extends BaseModule
             $p['baseline'] = $profiles->baseline($userId);
             return $p;
         }, 'onboarding');
+
+        // Тренеру — профиль и baseline. Свободный текст (ограничения)
+        // не отдаём: в модель уходит только обезличенное (Р-19).
+        $kernel->events->on('coach.context', static function (array $p) use ($kernel): array {
+            $profiles = $kernel->container->get(Profiles::class);
+            $row      = $profiles->find((int) ($p['user_id'] ?? 0));
+            if ($row !== null) {
+                $p['profile']  = $profiles->publicProfile($row) + ['experience' => (string) $row['experience']];
+                $p['baseline'] = $profiles->baseline((int) $p['user_id']);
+            }
+            return $p;
+        }, 'onboarding');
+
+        // Права на данные (Р-19): выгрузка и удаление — только своих таблиц.
+        \App\UserData::register($kernel, 'onboarding', 'onboarding_', [
+            'onboarding_profiles'  => [],
+            'onboarding_screening' => [],
+            'onboarding_baseline'  => [],
+        ]);
     }
 }

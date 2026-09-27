@@ -1,0 +1,20 @@
+{
+  "name": "safety",
+  "title": "Безопасность",
+  "version": "1.0.0",
+  "description": "Триггерные темы (самоповреждение, мысли о суициде, рвота после еды, слабительные, отказ от еды) уходят человеку, а не ИИ: заранее написанный текст с контактами помощи, тишина соревновательных элементов, сигнал модератору (Р-12, § 11). Работает независимо от модуля ИИ.",
+  "table_prefix": "safety_",
+  "requires": [
+    "identity"
+  ],
+  "provides": [],
+  "emits": [
+    "safety.alert"
+  ],
+  "listens": [
+    "analytics.collect",
+    "checkin.recorded",
+    "safety.check_text",
+    "telegram.group_message"
+  ]
+}

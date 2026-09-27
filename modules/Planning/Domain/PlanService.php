@@ -149,6 +149,17 @@ final class PlanService implements Planner
         }
 
         $action = Library::actionFor($day, $week, $plan['meta'], (int) $plan['limited'] === 1);
+        $adjust = $this->adjustmentFor($userId, $date ?? gmdate('Y-m-d'));
+        $factor = $adjust['factor'] ?? 1.0;
+
+        // Облегчение: цель действия и нормы недели умножаются на коэффициент.
+        // Силовая и кардио в такие дни — «половина по времени».
+        if ($adjust !== null) {
+            if (isset($action['target']) && is_int($action['target'])) {
+                $action['target'] = max(1, (int) round($action['target'] * $factor));
+            }
+            $action['lighter'] = true;
+        }
 
         return [
             'day'      => $day,
@@ -160,11 +171,80 @@ final class PlanService implements Planner
             'norm'     => [
                 'days'     => (int) $week['norm_days'],
                 'checkins' => (int) $week['norm_checkins'],
-                'steps'    => (int) $week['steps_target'],
-                'minutes'  => (int) $week['minutes'],
+                'steps'    => (int) round((int) $week['steps_target'] * $factor),
+                'minutes'  => (int) round((int) $week['minutes'] * $factor),
                 'strength' => (int) $week['strength'],
             ],
+            'adjustment' => $adjust,
             'finished' => false,
+        ];
+    }
+
+    /**
+     * Временное облегчение (Р-13: легче — без спроса). Повторный сигнал
+     * не складывается с действующим: берётся самый сильный коэффициент,
+     * а срок продлевается.
+     */
+    public function adjust(int $userId, float $factor, string $from, int $days, string $level, array $reasons = []): bool
+    {
+        if ($factor <= 0 || $factor >= 1 || $days < 1) {
+            return false;   // сделать тяжелее этим путём нельзя
+        }
+        $to     = gmdate('Y-m-d', strtotime($from . ' 00:00:00 UTC') + ($days - 1) * 86400);
+        $active = $this->kernel->db()->first(
+            'SELECT * FROM planning_adjustments WHERE user_id = ? AND date_from <= ? AND date_to >= ? AND level = ? ORDER BY factor ASC LIMIT 1',
+            [$userId, $from, $from, $level]
+        );
+        if ($active !== null && (float) $active['factor'] <= $factor && $active['date_to'] >= $to) {
+            return false;   // уже действует такое же или сильнее
+        }
+
+        $this->kernel->db()->insert('planning_adjustments', [
+            'user_id'    => $userId,
+            'date_from'  => $from,
+            'date_to'    => $to,
+            'factor'     => round($factor, 2),
+            'level'      => $level,
+            'reasons'    => json_encode(array_values($reasons)),
+            'created_at' => gmdate('c'),
+        ]);
+        $this->kernel->events->emit('plan.adjusted', [
+            'user_id' => $userId, 'factor' => $factor, 'from' => $from, 'to' => $to, 'level' => $level, 'reasons' => $reasons,
+        ]);
+        return true;
+    }
+
+    /**
+     * Возврат после паузы больше 7 дней (Р-14): старт с 60% последнего
+     * объёма и +15% в неделю, пока не догонит план.
+     */
+    public function rampAfterPause(int $userId, string $from): void
+    {
+        foreach ([0.6, 0.75, 0.9] as $i => $f) {
+            $start = gmdate('Y-m-d', strtotime($from . ' 00:00:00 UTC') + $i * 7 * 86400);
+            $this->adjust($userId, $f, $start, 7, 'ramp', ['return_after_pause']);
+        }
+    }
+
+    /** @return ?array{factor: float, level: string, until: string, reasons: array} */
+    public function adjustmentFor(int $userId, string $date): ?array
+    {
+        $row = $this->kernel->db()->first(
+            'SELECT * FROM planning_adjustments WHERE user_id = ? AND date_from <= ? AND date_to >= ? ORDER BY factor ASC, date_to DESC LIMIT 1',
+            [$userId, $date, $date]
+        );
+        if ($row === null) {
+            return null;
+        }
+        $until = (string) $this->kernel->db()->value(
+            'SELECT MAX(date_to) FROM planning_adjustments WHERE user_id = ? AND date_from <= ? AND date_to >= ? AND level = ?',
+            [$userId, $date, $date, $row['level']]
+        );
+        return [
+            'factor'  => (float) $row['factor'],
+            'level'   => (string) $row['level'],
+            'until'   => $until,
+            'reasons' => json_decode((string) $row['reasons'], true) ?: [],
         ];
     }
 

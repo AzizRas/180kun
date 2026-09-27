@@ -11,11 +11,14 @@
     "App\\Contracts\\Planner"
   ],
   "emits": [
+    "plan.adjusted",
     "plan.built",
     "planning.load_limits"
   ],
   "listens": [
     "onboarding.completed",
-    "season.scheduled"
+    "plan.load_adjust",
+    "season.scheduled",
+    "user.returned"
   ]
 }
