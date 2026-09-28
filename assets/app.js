@@ -34,8 +34,68 @@
 
   // ---------- вспомогательное ----------
 
+  /**
+   * Запасные строки оболочки. Настоящие приходят с сервера (modules/Web/lang);
+   * эти — на случай, если файл переводов не доехал до сервера при выкладке:
+   * человек должен видеть слова, а не ключи вида ui.greet.day.
+   */
+  var FALLBACK = {
+    ru: {
+      "ui.greet.morning": "Доброе утро",
+      "ui.greet.day": "Добрый день",
+      "ui.greet.evening": "Добрый вечер",
+      "ui.greet.night": "Доброй ночи",
+      "ui.nav.home": "Главная",
+      "ui.nav.squad": "Сквад",
+      "ui.nav.feed": "Лента",
+      "ui.nav.me": "Профиль",
+      "ui.w.ring": "в скваде",
+      "ui.w.days": "дней, чтобы изменить тело — вместе",
+      "ui.w.squad": "Сквад из 6 человек",
+      "ui.w.coach": "ИИ-тренер",
+      "ui.w.return": "Можно сорваться — важно вернуться",
+      "ui.season_day": "День сезона",
+      "ui.chapter_n": "глава {n}",
+      "ui.of_season": "сезона",
+      "ui.weekdays": "Вс,Пн,Вт,Ср,Чт,Пт,Сб",
+      "ui.change": "Изменить",
+      "ui.tile.week": "Неделя",
+      "ui.tile.streak": "Серия",
+      "ui.tile.shields": "Щиты",
+      "ui.tile.event": "Событие",
+      "ui.chat": "Чат",
+      "ui.retry": "Повторить"
+    },
+    uz: {
+      "ui.greet.morning": "Xayrli tong",
+      "ui.greet.day": "Xayrli kun",
+      "ui.greet.evening": "Xayrli kech",
+      "ui.greet.night": "Xayrli tun",
+      "ui.nav.home": "Bosh sahifa",
+      "ui.nav.squad": "Skvad",
+      "ui.nav.feed": "Lenta",
+      "ui.nav.me": "Profil",
+      "ui.w.ring": "skvadda",
+      "ui.w.days": "kun ichida tanani o‘zgartirish — birgalikda",
+      "ui.w.squad": "6 kishilik skvad",
+      "ui.w.coach": "SI-murabbiy",
+      "ui.w.return": "Yiqilish mumkin — muhimi qaytish",
+      "ui.season_day": "Mavsum kuni",
+      "ui.chapter_n": "{n}-bob",
+      "ui.of_season": "mavsum",
+      "ui.weekdays": "Ya,Du,Se,Ch,Pa,Ju,Sh",
+      "ui.change": "O‘zgartirish",
+      "ui.tile.week": "Hafta",
+      "ui.tile.streak": "Ketma-ket",
+      "ui.tile.shields": "Qalqonlar",
+      "ui.tile.event": "Hodisa",
+      "ui.chat": "Chat",
+      "ui.retry": "Qayta urinish"
+    }
+  };
+
   function t(key, vars) {
-    var s = state.strings[key] || key;
+    var s = state.strings[key] || (FALLBACK[state.lang] || {})[key] || FALLBACK.ru[key] || key;
     if (vars) {
       Object.keys(vars).forEach(function (k) {
         s = s.split('{' + k + '}').join(vars[k]);

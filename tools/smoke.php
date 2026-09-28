@@ -1595,6 +1595,12 @@ echo "\nПереводы\n";
 check('русские строки загружены', $kernel->i18n->t('identity.phone_taken') !== 'identity.phone_taken');
 check('узбекские строки загружены', $kernel->i18n->t('identity.phone_taken', [], 'uz') !== 'identity.phone_taken');
 check('нет непереведённых ключей', $kernel->i18n->untranslated() === [], implode(', ', $kernel->i18n->untranslated()));
+// Строки оболочки продублированы в app.js как запасные: если при выкладке
+// не доедет modules/Web/lang, человек увидит слова, а не ключи.
+$appJs = (string) file_get_contents($root . '/assets/app.js');
+$webKeys = array_keys(require $root . '/modules/Web/lang/ru.php');
+$missingFallback = array_values(array_filter($webKeys, static fn($k) => !str_contains($appJs, '"' . $k . '":')));
+check('у строк оболочки есть запасные в app.js', $missingFallback === [], implode(', ', $missingFallback));
 
 echo "\nСобытия\n";
 check('нет ошибок в слушателях', $kernel->events->errors() === [], json_encode($kernel->events->errors(), JSON_UNESCAPED_UNICODE));
